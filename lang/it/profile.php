@@ -1,0 +1,91 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Profile page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Profilo',
+    'login' => [
+        'header' => 'Profilo',
+        'enter_current_password' => 'Inserisci la password attuale:',
+        'current_password' => 'Password attuale',
+        'credentials_update' => 'Le tue credenziali verranno modificate come segue:',
+        'username' => 'Nome utente',
+        'change_password' => 'Cambia password',
+        'cancel_password_change' => 'Annulla cambio password',
+        'new_password' => 'Nuova password',
+        'confirm_new_password' => 'Conferma nuova password',
+        'password_strength_info' => 'La robustezza della password è una stima calcolata con l\'<a href="https://github.com/dropbox/zxcvbn" class="inline-block border-b border-info border-dashed" target="_blank" rel="noreferrer">algoritmo zxcvbn</a>.',
+        'email_instruction' => 'Aggiungi la tua email qui sotto per ricevere notifiche via email. Per non riceverle più, rimuovi semplicemente la tua email.',
+        'email' => 'Email',
+        'change' => 'Modifica accesso',
+        'api_token' => 'API Token ...',
+        'missing_fields' => 'Campi mancanti',
+        'ldap_managed' => 'Le informazioni di accesso dell\'utente sono gestite da LDAP.',
+    ],
+    'register' => [
+        'username_exists' => 'Il nome utente esiste già.',
+        'password_mismatch' => 'Le password non coincidono.',
+        'signup' => 'Registrati',
+        'error' => 'Si è verificato un errore durante la registrazione del tuo account.',
+        'success' => 'Il tuo account è stato creato.',
+    ],
+    'admin_setup' => [
+        'header' => 'Configura il tuo account amministratore',
+        'welcome' => 'Benvenuto in Lychee,<br>iniziamo creando un account amministratore.',
+        'submit' => 'Crea account amministratore',
+        'success' => 'Account amministratore creato.',
+        'error' => 'Si è verificato un errore durante la creazione dell\'account amministratore.',
+        'already_exists' => 'Un account amministratore è già stato configurato.',
+    ],
+    'token' => [
+        'unavailable' => 'Hai già visualizzato questo token.',
+        'no_data' => 'Nessun token API generato.',
+        'disable' => 'Disattiva',
+        'disabled' => 'Token disattivato',
+        'warning' => 'Questo token non verrà più mostrato. Copialo e conservalo in un luogo sicuro.',
+        'reset' => 'Reimposta il token',
+        'create' => 'Crea un nuovo token',
+    ],
+    'oauth' => [
+        'header' => 'OAuth',
+        'header_not_available' => 'OAuth non è disponibile',
+        'setup_env' => 'Configura le credenziali nel tuo .env',
+        'token_registered' => 'Token %s registrato.',
+        'setup' => 'Configura %s',
+        'reset' => 'reimposta',
+        'credential_deleted' => 'Credenziale eliminata!',
+    ],
+    'u2f' => [
+        'header' => 'Passkey/MFA/2FA',
+        'info' => 'Consente soltanto di usare WebAuthn per autenticarsi al posto di nome utente e password.',
+        'empty' => 'L\'elenco delle credenziali è vuoto!',
+        'not_secure' => 'Ambiente non sicuro. U2F non disponibile.',
+        'new' => 'Registra un nuovo dispositivo.',
+        'credential_deleted' => 'Credenziale eliminata!',
+        'credential_updated' => 'Credenziale aggiornata!',
+        'credential_registred' => 'Registrazione riuscita!',
+        '5_chars' => 'Almeno 5 caratteri.',
+    ],
+    'preferences' => [
+        'header' => 'Preferenze',
+        'save' => 'Salva preferenza',
+        'reset' => 'Ripristina',
+        'change_saved' => 'Preferenza salvata!',
+    ],
+    'shared_albums' => [
+        'instruction' => 'Scegli come appaiono nella tua galleria gli album condivisi (album di altri utenti):',
+        'mode_default' => 'Usa impostazione del server',
+        'mode_default_desc' => 'Eredita la modalità di visibilità predefinita del server.',
+        'mode_show' => 'Mostra insieme',
+        'mode_show_desc' => 'Gli album condivisi appaiono sotto i tuoi album.',
+        'mode_separate' => 'Schede separate',
+        'mode_separate_desc' => 'Visualizza gli album nelle schede separate "I miei album" e "Condivisi con me".',
+        'mode_separate_shared_only' => 'Solo condivisi',
+        'mode_separate_shared_only_desc' => 'Schede separate che mostrano solo gli album condivisi direttamente (esclusi gli album pubblici).',
+        'mode_hide' => 'Nascondi',
+        'mode_hide_desc' => 'Non mostrare alcun album condiviso.',
+    ],
+];

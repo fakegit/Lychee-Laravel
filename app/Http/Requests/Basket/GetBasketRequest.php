@@ -1,0 +1,68 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Http\Requests\Basket;
+
+use App\Contracts\Http\Requests\HasBasket;
+use App\Contracts\Http\Requests\RequestAttribute;
+use App\Enum\PaymentStatusType;
+use App\Http\Requests\BaseApiRequest;
+use App\Models\Order;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cookie;
+
+class GetBasketRequest extends BaseApiRequest implements HasBasket
+{
+	protected ?Order $order = null;
+
+	public function basket(): ?Order
+	{
+		return $this->order;
+	}
+
+	public function authorize(): bool
+	{
+		return true;
+	}
+
+	/**
+	 * Get the validation rules that apply to the request.
+	 */
+	public function rules(): array
+	{
+		return [];
+	}
+
+	protected function processValidatedValues(array $values, array $files): void
+	{
+		// If there is a basket_id in the cookie, use it.
+		$basket_id = Cookie::get(RequestAttribute::BASKET_ID_ATTRIBUTE);
+		if ($basket_id !== null) {
+			$this->order = Order::find($basket_id);
+		}
+
+		if (Auth::guest()) {
+			// Guests may keep their own (anonymous) basket, but must never
+			// adopt an order that belongs to a registered user.
+			if ($this->order?->user_id !== null) {
+				$this->order = null;
+			}
+
+			return;
+		}
+
+		$user_id = Auth::id();
+		if ($this->order?->user_id !== $user_id) {
+			// If the basket belongs to another user, ignore it.
+			$this->order = null;
+		}
+
+		// If user is logged in, retrieve the current pending basket.
+		$this->order ??= Order::where('user_id', $user_id)->where('status', PaymentStatusType::PENDING)->first();
+	}
+}

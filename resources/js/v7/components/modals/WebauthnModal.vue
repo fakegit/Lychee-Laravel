@@ -1,0 +1,90 @@
+<template>
+	<Dialog
+		v-if="!isWebAuthnUnavailable"
+		v-model:visible="is_webauthn_open"
+		modal
+		pt:root:class="border-none"
+		pt:mask:style="backdrop-filter: blur(2px)"
+	>
+		<template #container="{ closeCallback }">
+			<form v-focustrap class="flex flex-col gap-4 relative max-w-md w-full text-sm rounded-md pt-9">
+				<div class="inline-flex flex-col gap-2 px-9">
+					<FloatLabel variant="on">
+						<InputText id="username" v-model="username" />
+						<label for="username">{{ identifierLabel }}</label>
+					</FloatLabel>
+				</div>
+				<div class="flex items-center mt-9">
+					<Button
+						severity="secondary"
+						class="w-full font-bold border-none rounded-none ltr:rounded-bl-xl rtl:rounded-br-xl shrink-2"
+						@click="closeCallback"
+					>
+						{{ $t("dialogs.button.cancel") }}
+					</Button>
+					<Button
+						severity="contrast"
+						class="w-full font-bold border-none rounded-none ltr:rounded-br-xl rtl:rounded-bl-xl shrink"
+						@click="login"
+					>
+						{{ $t("dialogs.webauthn.u2f") }}
+					</Button>
+				</div>
+			</form>
+		</template>
+	</Dialog>
+</template>
+<script setup lang="ts">
+import Dialog from "primevue/dialog";
+import FloatLabel from "primevue/floatlabel";
+import Button from "primevue/button";
+import { useToast } from "primevue/usetoast";
+import { computed, ref } from "vue";
+import InputText from "@/v7/components/forms/basic/InputText.vue";
+import { trans } from "laravel-vue-i18n";
+import WebAuthnService from "@/services/webauthn-service";
+import { useTogglablesStateStore } from "@/stores/ModalsState";
+import { useClearViewerState } from "@/composables/useClearViewerState";
+import { storeToRefs } from "pinia";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+
+const toast = useToast();
+const emits = defineEmits<{
+	"logged-in": [];
+}>();
+
+const togglableStore = useTogglablesStateStore();
+const { clearViewerState } = useClearViewerState();
+
+const isWebAuthnUnavailable = computed<boolean>(() => WebAuthnService.isWebAuthnUnavailable());
+const { is_webauthn_open } = storeToRefs(togglableStore);
+const { is_email_login_enabled } = storeToRefs(useLycheeStateStore());
+
+// With `email_login_enabled` the field accepts a username or an email address.
+const identifierLabel = computed(() => trans(is_email_login_enabled.value ? "dialogs.login.username_or_email" : "dialogs.login.username"));
+
+const username = ref("");
+const userId = ref<number | null>(null);
+
+function login() {
+	WebAuthnService.login(username.value, userId.value)
+		.then(function () {
+			toast.add({
+				severity: "success",
+				summary: trans("dialogs.webauthn.success"),
+				life: 3000,
+			});
+			is_webauthn_open.value = false;
+			clearViewerState();
+			emits("logged-in");
+		})
+		.catch((e) =>
+			toast.add({
+				severity: "error",
+				summary: trans("dialogs.webauthn.error"),
+				detail: e.response.data.message,
+				life: 3000,
+			}),
+		);
+}
+</script>

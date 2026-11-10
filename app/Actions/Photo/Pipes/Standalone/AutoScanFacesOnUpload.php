@@ -1,0 +1,58 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Actions\Photo\Pipes\Standalone;
+
+use App\DTO\PhotoCreate\StandaloneDTO;
+use App\Jobs\DispatchFaceScanJob;
+use App\Repositories\ConfigManager;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * Automatically trigger face scanning when a photo is uploaded,
+ * if the AI Vision face scanning feature is enabled.
+ */
+class AutoScanFacesOnUpload extends AbstractStandalonePipe
+{
+	public function __construct(
+		protected readonly ConfigManager $config_manager,
+	) {
+	}
+
+	protected function execute(StandaloneDTO $state, \Closure $next): StandaloneDTO
+	{
+		// Process through the rest of the pipeline first
+		$state = $next($state);
+
+		if ($state->photo->isPhoto() === false) {
+			// If this is not a photo (e.g., a video), we skip face scanning
+			return $state;
+		}
+
+		// Check if AI vision is enabled
+		if (!$this->config_manager->getValueAsBool('ai_vision_enabled')) {
+			return $state;
+		}
+
+		// Check if face scanning is enabled
+		if (!$this->config_manager->getValueAsBool('ai_vision_face_enabled')) {
+			return $state;
+		}
+
+		// Dispatch face scanning job for the uploaded photo
+		Log::info("AutoScanFacesOnUpload: dispatching face scan for photo {$state->photo->id}.");
+		DispatchFaceScanJob::dispatch($state->photo->id);
+
+		return $state;
+	}
+
+	protected function getSpanName(): string
+	{
+		return 'photo.auto_scan_faces_on_upload';
+	}
+}

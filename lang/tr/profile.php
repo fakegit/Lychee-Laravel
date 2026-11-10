@@ -1,0 +1,91 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Profile page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Profil',
+    'login' => [
+        'header' => 'Profil',
+        'enter_current_password' => 'Mevcut parolanızı girin:',
+        'current_password' => 'Mevcut parola',
+        'credentials_update' => 'Kimlik bilgileriniz şu şekilde değiştirilecek:',
+        'username' => 'Kullanıcı adı',
+        'change_password' => 'Parolayı değiştir',
+        'cancel_password_change' => 'Parola değişikliğini iptal et',
+        'new_password' => 'Yeni parola',
+        'confirm_new_password' => 'Yeni parolayı onayla',
+        'password_strength_info' => 'Parola gücü, <a href="https://github.com/dropbox/zxcvbn" class="inline-block border-b border-info border-dashed" target="_blank" rel="noreferrer">zxcvbn algoritması</a> kullanılarak yapılan bir tahmindir.',
+        'email_instruction' => 'E-posta bildirimleri almak için e-posta adresinizi aşağıya ekleyin. E-posta almayı durdurmak için aşağıdaki e-posta adresinizi kaldırmanız yeterlidir.',
+        'email' => 'E-posta',
+        'change' => 'Oturum Bilgilerini Değiştir',
+        'api_token' => 'API Token …',
+        'missing_fields' => 'Eksik alanlar',
+        'ldap_managed' => 'Kullanıcı oturum bilgileri LDAP tarafından yönetiliyor.',
+    ],
+    'register' => [
+        'username_exists' => 'Kullanıcı adı zaten mevcut.',
+        'password_mismatch' => 'Parolalar eşleşmiyor.',
+        'signup' => 'Kaydol',
+        'error' => 'Hesabınız kaydedilirken bir hata oluştu.',
+        'success' => 'Hesabınız başarıyla oluşturuldu.',
+    ],
+    'admin_setup' => [
+        'header' => 'Yönetici hesabınızı oluşturun',
+        'welcome' => 'Lychee\'ye hoş geldiniz,<br>bir yönetici hesabı oluşturarak başlayalım.',
+        'submit' => 'Yönetici hesabı oluştur',
+        'success' => 'Yönetici hesabı başarıyla oluşturuldu.',
+        'error' => 'Yönetici hesabı oluşturulurken bir hata oluştu.',
+        'already_exists' => 'Bir yönetici hesabı zaten oluşturulmuş.',
+    ],
+    'token' => [
+        'unavailable' => 'Bu token\'ı zaten görüntülediniz.',
+        'no_data' => 'Hiç API token\'ı oluşturulmadı.',
+        'disable' => 'Devre dışı bırak',
+        'disabled' => 'Token devre dışı',
+        'warning' => 'Bu token bir daha gösterilmeyecek. Kopyalayın ve güvenli bir yerde saklayın.',
+        'reset' => 'Token\'ı sıfırla',
+        'create' => 'Yeni bir token oluştur',
+    ],
+    'oauth' => [
+        'header' => 'OAuth',
+        'header_not_available' => 'OAuth kullanılamıyor',
+        'setup_env' => 'Kimlik bilgilerini .env dosyanızda ayarlayın',
+        'token_registered' => '%s token\'ı kaydedildi.',
+        'setup' => '%s kurulumu',
+        'reset' => 'sıfırla',
+        'credential_deleted' => 'Kimlik bilgisi silindi!',
+    ],
+    'u2f' => [
+        'header' => 'Passkey/MFA/2FA',
+        'info' => 'Bu yalnızca kullanıcı adı ve parola yerine kimlik doğrulama için WebAuthn kullanma olanağı sağlar.',
+        'empty' => 'Kimlik bilgisi listesi boş!',
+        'not_secure' => 'Ortam güvenli değil. U2F kullanılamıyor.',
+        'new' => 'Yeni cihaz kaydet.',
+        'credential_deleted' => 'Kimlik bilgisi silindi!',
+        'credential_updated' => 'Kimlik bilgisi güncellendi!',
+        'credential_registred' => 'Kayıt başarılı!',
+        '5_chars' => 'En az 5 karakter.',
+    ],
+    'preferences' => [
+        'header' => 'Tercihler',
+        'save' => 'Tercihi Kaydet',
+        'reset' => 'Sıfırla',
+        'change_saved' => 'Tercih kaydedildi!',
+    ],
+    'shared_albums' => [
+        'instruction' => 'Paylaşılan albümlerin (diğer kullanıcıların albümleri) galerinizde nasıl görüneceğini seçin:',
+        'mode_default' => 'Sunucu Varsayılanını Kullan',
+        'mode_default_desc' => 'Sunucunun varsayılan görünürlük modunu devral.',
+        'mode_show' => 'Birlikte Göster',
+        'mode_show_desc' => 'Paylaşılan albümler kendi albümlerinizin altında görünür.',
+        'mode_separate' => 'Ayrı Sekmeler',
+        'mode_separate_desc' => 'Albümleri ayrı "Albümlerim" ve "Benimle Paylaşılanlar" sekmelerinde görüntüleyin.',
+        'mode_separate_shared_only' => 'Yalnızca Paylaşılanlar',
+        'mode_separate_shared_only_desc' => 'Yalnızca doğrudan paylaşılan albümleri gösteren ayrı sekmeler (herkese açık albümler hariç).',
+        'mode_hide' => 'Gizle',
+        'mode_hide_desc' => 'Hiçbir paylaşılan albümü gösterme.',
+    ],
+];

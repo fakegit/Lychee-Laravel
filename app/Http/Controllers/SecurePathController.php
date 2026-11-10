@@ -1,0 +1,147 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Http\Controllers;
+
+use App\Actions\Diagnostics\Pipes\Infos\DockerVersionInfo;
+use App\Enum\StorageDiskType;
+use App\Exceptions\SecurePaths\InvalidPayloadException;
+use App\Exceptions\SecurePaths\InvalidSignatureException;
+use App\Exceptions\SecurePaths\PathTraversalException;
+use App\Exceptions\SecurePaths\SignatureExpiredException;
+use App\Exceptions\SecurePaths\WrongPathException;
+use App\Http\Requests\SecurePath\SecurePathRequest;
+use App\Services\UrlGenerator;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Controller;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Safe\Exceptions\FilesystemException;
+use function Safe\realpath;
+
+/**
+ * Controller responsible for serving files securely.
+ */
+class SecurePathController extends Controller
+{
+	public function __construct(
+		protected DockerVersionInfo $docker_version_info,
+	) {
+	}
+
+	public function __invoke(SecurePathRequest $request, ?string $path)
+	{
+		$url_generator = new UrlGenerator($request->configs());
+
+		// First we verify that the request has not expired.
+		if (!$url_generator->shouldNotUseSignedUrl() && !$this->signatureHasNotExpired($request)) {
+			throw new SignatureExpiredException();
+		}
+
+		// Then we verify that the request has a valid signature.
+		// @phpstan-ignore staticMethod.dynamicCall (laravel magic strikes again)
+		if (!$url_generator->shouldNotUseSignedUrl() && !$request->hasValidSignature()) {
+			Log::error('Invalid signature for secure path request. Verify that the url generated for the image match.', [
+				'candidate url' => $this->getUrl($request),
+			]);
+			throw new InvalidSignatureException();
+		}
+
+		if ($request->configs()->getValueAsBool('secure_image_link_enabled')) {
+			try {
+				$path = Crypt::decryptString($path);
+			} catch (DecryptException) {
+				throw new InvalidPayloadException();
+			}
+		}
+
+		$this->prevalidation_path($path);
+
+		try {
+			$file = realpath(Storage::disk(StorageDiskType::LOCAL->value)->path($path));
+		} catch (FilesystemException) {
+			throw new WrongPathException();
+		}
+
+		$valid_path_start = Storage::disk(StorageDiskType::LOCAL->value)->path('');
+
+		// If we are on LinuxServer.io docker image they moved the photo folder to /pictures.
+		if ($this->docker_version_info->isDocker() && $this->docker_version_info->isLinuxServer()) {
+			$valid_path_start = '/pictures/';
+		}
+
+		if (!str_starts_with($file, $valid_path_start)) {
+			Log::error('Invalid path for secure path request.', [
+				'path' => $file,
+				'valid_path_start' => $valid_path_start,
+			]);
+			throw new PathTraversalException('Invalid path for secure path request.');
+		}
+
+		// Do not leak whether the file exists or not before checking for traversal.
+		if (!file_exists($file)) {
+			throw new WrongPathException();
+		}
+
+		return response()->file($file);
+	}
+
+	private function getUrl(Request $request): string
+	{
+		$ignore_query = ['signature'];
+
+		$query_string = '';
+		$query_string = (new Collection(explode('&', (string) $request->server->get('QUERY_STRING'))))
+			->reject(fn ($parameter) => in_array(Str::before($parameter, '='), $ignore_query, true))
+			->join('&');
+
+		return rtrim($request->url() . '?' . $query_string, '?');
+	}
+
+	/**
+	 * Determine if the expires timestamp from the given request is not from the past.
+	 *
+	 * @param \Illuminate\Http\Request $request
+	 *
+	 * @return bool
+	 */
+	private function signatureHasNotExpired(Request $request)
+	{
+		/** @var int|null $expires */
+		$expires = $request->query('expires') !== null ? intval($request->query('expires'), 10) : null;
+
+		return !($expires !== null && $expires !== '' && Carbon::now()->getTimestamp() > $expires);
+	}
+
+	/**
+	 * Validate the path.
+	 *
+	 * @param string|null $path
+	 *
+	 * @return void
+	 *
+	 * @throws WrongPathException
+	 */
+	private function prevalidation_path(?string $path): void
+	{
+		if (is_null($path)) {
+			throw new WrongPathException();
+		}
+
+		foreach (['..', '%2e', '%2f', '\\'] as $invalid_sequence) {
+			if (str_contains($path, $invalid_sequence)) {
+				throw new PathTraversalException('Invalid path for secure path request.');
+			}
+		}
+	}
+}

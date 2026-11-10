@@ -1,0 +1,57 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Moderation page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Модерация',
+    'description' => 'Преглеждайте и одобрявайте снимки, качени от потребители с ниво на доверие "check", преди да станат публично видими.',
+    'approve_selected' => 'Одобри избраните',
+    'delete_selected' => 'Изтрий избраните',
+    'selected' => 'избрани',
+    'no_pending' => 'Няма снимки, чакащи модерация.',
+    'approved' => 'Снимките са одобрени успешно.',
+    'col_thumbnail' => 'Миниатюра',
+    'col_title' => 'Заглавие',
+    'col_owner' => 'Собственик',
+    'col_album' => 'Албум',
+    'col_uploaded' => 'Качено',
+    'col_nsfw' => 'NSFW',
+    'nsfw_review' => 'NSFW преглед',
+    'overlay_confidence' => 'Увереност: :value%',
+    'overlay_area' => 'Област: :value',
+    'overlay_mode_all' => 'NSFW: Всички',
+    'overlay_mode_block' => 'NSFW: Блокиране',
+    'overlay_mode_review' => 'NSFW: Преглед',
+    'overlay_mode_sensitive' => 'NSFW: Чувствително',
+    // Feature 089: moderation history and NSFW findings review.
+    'tab_pending' => 'Чакащи',
+    'tab_history' => 'История',
+    'no_history' => 'Няма история на модерацията.',
+    'col_photo' => 'Снимка',
+    'col_event' => 'Събитие',
+    'col_by' => 'От',
+    'col_date' => 'Дата',
+    'event_held' => 'Задържана',
+    'event_approved' => 'Одобрена',
+    'source_upload' => 'Качване',
+    'source_nsfw_scan' => 'NSFW сканиране',
+    'history_title' => 'Модерация',
+    'history_show_all' => 'Покажи всички (:count)',
+    'findings_title' => 'NSFW находки',
+    'findings_description' => 'Прегледайте NSFW находките и отхвърлете грешните. Отхвърлените находки се изтриват; ново сканиране може да ги открие отново.',
+    'findings_empty' => 'Няма NSFW находки.',
+    'findings_col_status' => 'Статус',
+    'findings_col_findings' => 'Находки',
+    'findings_col_albums' => 'Албуми',
+    'findings_hidden' => 'Скрита',
+    'findings_dismiss' => 'Отхвърли',
+    'findings_dismiss_all' => 'Отхвърли всички находки за тази снимка',
+    'findings_dismiss_selected' => 'Отхвърли избраните',
+    'findings_confirm_header' => 'Отхвърляне на находки',
+    'findings_confirm' => 'Да се отхвърлят ли всички находки за :count снимка(и)? Те ще бъдат изтрити.',
+    'findings_dismissed' => 'Находките са отхвърлени.',
+    'findings_error' => 'NSFW находките не можаха да бъдат заредени или променени.',
+];

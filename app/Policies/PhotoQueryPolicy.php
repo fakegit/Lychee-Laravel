@@ -1,0 +1,373 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Policies;
+
+use App\Constants\PhotoAlbum as PA;
+use App\Contracts\Exceptions\InternalLycheeException;
+use App\Eloquent\FixedQueryBuilder;
+use App\Exceptions\Internal\InvalidQueryModelException;
+use App\Exceptions\Internal\QueryBuilderException;
+use App\Models\Album;
+use App\Models\Extensions\FiltersUploadValidation;
+use App\Models\Photo;
+use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as BaseBuilder;
+use Illuminate\Database\Query\JoinClause;
+
+class PhotoQueryPolicy
+{
+	use FiltersUploadValidation;
+
+	public function __construct(
+		protected AlbumQueryPolicy $album_query_policy,
+	) {
+	}
+
+	/**
+	 * Restricts a photo query to _visible_ photos.
+	 *
+	 * A photo is called _visible_ if the current user is allowed to see the
+	 * photo.
+	 * A photo is _visible_ if any of the following conditions hold
+	 * (OR-clause):
+	 *
+	 *  - the user is the admin
+	 *  - the user is the owner of the photo
+	 *  - the photo is part of an album which the user is allowed to access
+	 *    (cp. {@link AlbumQueryPolicy::isAccessible()}).
+	 *  - the photo is public
+	 *
+	 * @param FixedQueryBuilder<Photo> $query
+	 * @param User|null                $user               the current user, or null if not authenticated
+	 * @param string[]                 $unlocked_album_ids array of unlocked album IDs
+	 *
+	 * @return FixedQueryBuilder<Photo>
+	 *
+	 * @throws InternalLycheeException
+	 */
+	public function applyVisibilityFilter(FixedQueryBuilder $query, ?User $user, array $unlocked_album_ids): FixedQueryBuilder
+	{
+		$this->prepareModelQueryOrFail($query, false, true, $user);
+
+		if ($user?->may_administrate === true) {
+			return $query;
+		}
+
+		$user_id = $user?->id;
+
+		// We must wrap everything into an outer query to avoid any undesired
+		// effects in case that the original query already contains an
+		// "OR"-clause.
+		$visibility_sub_query = function (FixedQueryBuilder $query2) use ($user, $unlocked_album_ids, $user_id): void {
+			$this->album_query_policy->appendAccessibilityConditions($query2->getQuery(), $user, $unlocked_album_ids);
+			if ($user_id !== null) {
+				$query2->orWhere('photos.owner_id', '=', $user_id);
+			}
+		};
+
+		// Unvalidated photos are only visible to their owner or to admins.
+		// We wrap the main OR-clause so that accessibility is still required,
+		// and add an additional AND condition for the validation flag.
+		$query = $query->where($visibility_sub_query);
+
+		return $this->applyUploadValidationFilter($query, $user_id);
+	}
+
+	/**
+	 * Restricts a photo query to _searchable_ photos.
+	 *
+	 * A photo is _searchable_ if at least one of the following conditions
+	 * hold:
+	 *
+	 *  - the photo is part of an album which the user is allowed to browse
+	 *  - the user is the owner of the photo
+	 *  - the photo is public and searching through public photos is enabled
+	 *
+	 * See {@link AlbumQueryPolicy::applyBrowsabilityFilter()}
+	 * for a definition of a browsable album.
+	 *
+	 * The search result is restricted to photos in albums which are below
+	 * `$origin`.
+	 *
+	 * **Attention**:
+	 * For efficiency reasons this method does not check if `$origin` itself
+	 * is accessible.
+	 * The method simply assumes that the user has already legitimately
+	 * accessed the origin album, if the caller provides an album model.
+	 *
+	 * @param FixedQueryBuilder<Photo> $query              the photo query which shall be restricted
+	 * @param User|null                $user               the current user, or null if not authenticated
+	 * @param string[]                 $unlocked_album_ids array of unlocked album IDs
+	 * @param Album|null               $origin             the optional top album which is used as a search base
+	 * @param bool                     $include_nsfw       include also the photos in sensitive albums
+	 *
+	 * @return FixedQueryBuilder<Photo> the restricted photo query
+	 *
+	 * @throws InternalLycheeException
+	 */
+	public function applySearchabilityFilter(FixedQueryBuilder $query, ?User $user, array $unlocked_album_ids, ?Album $origin = null, bool $include_nsfw = true): FixedQueryBuilder
+	{
+		$this->prepareModelQueryOrFail($query, true, false, $user);
+
+		// If origin is set, also restrict the search result for admin
+		// to photos which are in albums below origin.
+		// This is not a security filter, but simply functional.
+		if ($origin !== null) {
+			$query
+				->where('albums._lft', '>=', $origin->_lft)
+				->where('albums._rgt', '<=', $origin->_rgt);
+		}
+
+		if (!$include_nsfw) {
+			$query->where(fn (Builder $query) => $this->appendSensitivityConditions($query->getQuery(), $user, $origin?->_lft, $origin?->_rgt));
+		}
+
+		if ($user?->may_administrate === true) {
+			return $query;
+		}
+
+		$query_with_search = $query->where(function (Builder $query) use ($user, $unlocked_album_ids, $origin): void {
+			$this->appendSearchabilityConditions(
+				$query->getQuery(),
+				$user,
+				$unlocked_album_ids,
+				$origin?->_lft,
+				$origin?->_rgt
+			);
+		});
+
+		return $this->applyUploadValidationFilter($query_with_search, $user?->id);
+	}
+
+	/**
+	 * Restricts the photo query to only non sensitive photos.
+	 *
+	 * @param FixedQueryBuilder $query
+	 * @param User|null         $user
+	 * @param Album|null        $origin
+	 * @param bool              $include_nsfw
+	 *
+	 * @return FixedQueryBuilder
+	 */
+	public function applySensitivityFilter(FixedQueryBuilder $query, ?User $user, ?Album $origin = null, bool $include_nsfw = true): FixedQueryBuilder
+	{
+		if ($include_nsfw) {
+			return $query;
+		}
+
+		$this->prepareModelQueryOrFail($query, true, false, $user);
+
+		// If origin is set, also restrict the search result for admin
+		// to photos which are in albums below origin.
+		// This is not a security filter, but simply functional.
+		if ($origin !== null) {
+			$query
+				->where('albums._lft', '>=', $origin->_lft)
+				->where('albums._rgt', '<=', $origin->_rgt);
+		}
+
+		return $query->where(fn (Builder $query) => $this->appendSensitivityConditions($query->getQuery(), $user, $origin?->_lft, $origin?->_rgt));
+	}
+
+	/**
+	 * Adds the conditions of _searchable_ photos to the query.
+	 *
+	 * **Attention:** This method is only meant for internal use.
+	 * Use {@link PhotoQueryPolicy::applySearchabilityFilter()}
+	 * if called from other places instead.
+	 *
+	 * This method adds the WHERE conditions without any further pre-cautions.
+	 * The method silently assumes that the SELECT clause contains the tables
+	 *
+	 *  - **`albums`**.
+	 *
+	 * See {@link AlbumQueryPolicy::applySearchabilityFilter()}
+	 * for a definition of a searchable photo.
+	 *
+	 * Moreover, the raw clauses are added.
+	 * They are not wrapped into a nesting braces `()`.
+	 *
+	 * @param BaseBuilder     $query              the photo query which shall be restricted
+	 * @param User|null       $user               the current user, or null if not authenticated
+	 * @param string[]        $unlocked_album_ids array of unlocked album IDs
+	 * @param int|string|null $origin_left        optionally constraints the search base;
+	 *                                            an integer value is interpreted a raw left bound of the search base;
+	 *                                            a string value is interpreted as a reference to a column which shall be used as a left bound
+	 * @param int|string|null $origin_right       like `$origin_left` but for the right bound
+	 *
+	 * @return BaseBuilder the restricted photo query
+	 *
+	 * @throws QueryBuilderException
+	 */
+	public function appendSearchabilityConditions(BaseBuilder $query, ?User $user, array $unlocked_album_ids, int|string|null $origin_left, int|string|null $origin_right): BaseBuilder
+	{
+		$user_id = $user?->id;
+
+		try {
+			// there must be no unreachable album between the origin and the photo
+			$query->whereNotExists(function (BaseBuilder $q) use ($user, $unlocked_album_ids, $origin_left, $origin_right): void {
+				$this->album_query_policy->appendUnreachableAlbumsCondition($q, $origin_left, $origin_right, $user, $unlocked_album_ids);
+			});
+
+			// Special care needs to be taken for unsorted photo, i.e. photos on
+			// the root level:
+			// The condition for "no unreachable albums along the path" fails for
+			// root album due to two reasons:
+			//   a) the path of albums between to the root album is empty; hence,
+			//      there are never any unreachable albums in between
+			//   b) while all users (even unauthenticated users) may access the
+			//      root album, they must only see their own photos or public
+			//      photos (this is different to any other album: if users are
+			//      allowed to access an album, they may also see its content)
+			$query->whereNotNull(PA::ALBUM_ID);
+
+			if ($user_id !== null) {
+				$query->orWhere('photos.owner_id', '=', $user_id);
+			}
+		} catch (\Throwable $e) {
+			throw new QueryBuilderException($e);
+		}
+
+		return $query;
+	}
+
+	/**
+	 * Adds the conditions of _sensitive_ photos to the query.
+	 *
+	 * **Attention:** This method is only meant for internal use.
+	 * Use {@link PhotoQueryPolicy::applySearchabilityFilter()}
+	 * if called from other places instead.
+	 *
+	 * This method adds the WHERE conditions without any further pre-cautions.
+	 * The method silently assumes that the SELECT clause contains the tables
+	 *
+	 *  - **`albums`**.
+	 *
+	 * Moreover, the raw clauses are added.
+	 * They are not wrapped into a nesting braces `()`.
+	 *
+	 * @param BaseBuilder     $query        the photo query which shall be restricted
+	 * @param User|null       $user         the current user, or null if not authenticated
+	 * @param int|string|null $origin_left  left boundary
+	 * @param int|string|null $origin_right right boundary
+	 *
+	 * @return BaseBuilder the restricted photo query
+	 *
+	 * @throws QueryBuilderException
+	 */
+	private function appendSensitivityConditions(BaseBuilder $query, ?User $user, int|string|null $origin_left, int|string|null $origin_right): BaseBuilder
+	{
+		if ($origin_left === null) {
+			// Without an origin every NSFW ancestor counts, which the stored
+			// flag of the joined album answers (FR-103-12). A photo without
+			// album has no such ancestor.
+			return $query
+				->where('albums.is_recursive_nsfw', '=', false)
+				->orWhereNull(PA::ALBUM_ID);
+		}
+
+		$user_id = $user?->id;
+
+		try {
+			// there must be no unreachable album between the origin and the photo
+			$query->whereNotExists(function (BaseBuilder $q) use ($origin_left, $origin_right): void {
+				$this->album_query_policy->appendRecursiveSensitiveAlbumsCondition($q, $origin_left, $origin_right);
+			});
+
+			// Special care needs to be taken for unsorted photo, i.e. photos on
+			// the root level:
+			// The condition for "no unreachable albums along the path" fails for
+			// root album due to two reasons:
+			//   a) the path of albums between to the root album is empty; hence,
+			//      there are never any unreachable albums in between
+			//   b) while all users (even unauthenticated users) may access the
+			//      root album, they must only see their own photos or public
+			//      photos (this is different to any other album: if users are
+			//      allowed to access an album, they may also see its content)
+			$query->orWhere(
+				fn ($q) => $q
+					->whereNull(PA::ALBUM_ID)
+					->where('photos.owner_id', '=', $user_id)
+			);
+		} catch (\Throwable $e) {
+			throw new QueryBuilderException($e);
+		}
+
+		return $query;
+	}
+
+	/**
+	 * Throws an exception if the given query does not query for a photo.
+	 *
+	 * @param FixedQueryBuilder<Photo> $query           the query to prepare
+	 * @param bool                     $add_albums      if true, joins photo query with (parent) albums
+	 * @param bool                     $add_base_albums if true, joins photos query with (parent) base albums
+	 * @param User|null                $user            the current user, or null if not authenticated
+	 *
+	 * @throws InternalLycheeException
+	 */
+	private function prepareModelQueryOrFail(FixedQueryBuilder $query, bool $add_albums, bool $add_base_albums, ?User $user): void
+	{
+		$model = $query->getModel();
+		$base_query = $query->getQuery();
+		$table = $base_query->from;
+		if (!($model instanceof Photo && $table === 'photos')) {
+			throw new InvalidQueryModelException('photo');
+		}
+
+		// Ensure that only columns of the photos are selected,
+		// if no specific columns are yet set.
+		// Otherwise, we cannot add a JOIN clause below
+		// without accidentally adding all columns of the join, too.
+
+		if ($base_query->columns === null || count($base_query->columns) === 0) {
+			$query->select(['photos.*']);
+		}
+
+		/** @var array<int,JoinClause> $joins */
+		$joins = $base_query->joins ?? [];
+
+		// Check if the photo album is already joined
+		$is_photo_album_joined = array_reduce($joins, fn (bool $is_photo_album_joined, JoinClause $join) => $is_photo_album_joined || PA::isJoinedToPhoto($join), false);
+
+		if (!$is_photo_album_joined) {
+			$query->leftJoin(
+				table: PA::PHOTO_ALBUM,
+				first: 'photos.id',
+				operator: '=',
+				second: PA::PHOTO_ID);
+		}
+
+		if ($add_albums) {
+			$query->leftJoin(
+				table: 'albums',
+				first: 'albums.id',
+				operator: '=',
+				second: PA::ALBUM_ID);
+		}
+		if ($add_base_albums) {
+			$query->leftJoin(
+				table: 'base_albums',
+				first: 'base_albums.id',
+				operator: '=',
+				second: PA::ALBUM_ID);
+		}
+
+		// Necessary to apply the visibiliy/search conditions
+		$this->album_query_policy->joinSubComputedAccessPermissions(
+			query: $query,
+			second: PA::ALBUM_ID,
+			type: 'left',
+			prefix: '',
+			full: false,
+			user: $user
+		);
+	}
+}

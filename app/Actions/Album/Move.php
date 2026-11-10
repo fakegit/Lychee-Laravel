@@ -1,49 +1,67 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\Actions\Album;
 
+use App\Events\AlbumChildrenChanged;
+use App\Events\AlbumListingCacheFlushRequested;
+use App\Events\AlbumSaved;
+use App\Exceptions\ModelDBException;
 use App\Models\Album;
-use App\Models\Logs;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Collection;
 
-class Move extends Action
+class Move
 {
 	/**
-	 * @param string $albumID
+	 * Moves the given albums into the target.
 	 *
-	 * @return bool
+	 * @throws ModelNotFoundException
+	 * @throws ModelDBException
 	 */
-	public function do(string $albumID, array $albumIDs): bool
+	public function do(?Album $target_album, Collection $albums): void
 	{
-		$album_master = null;
-		// $albumID = 0 is root
-		// ! check type
-		if ($albumID != 0) {
-			$album_master = $this->albumFactory->make($albumID);
+		/** @var Collection<int,string|null> $old_parent_ids */
+		$old_parent_ids = $albums->map(fn (Album $album) => $album->parent_id)->unique();
+		$moved_album_ids = $albums->pluck('id')->all();
 
-			if ($album_master->is_smart()) {
-				Logs::error(__METHOD__, __LINE__, 'Move is not possible on smart albums');
+		// Move source albums into target
+		if ($target_album !== null) {
+			/** @var Album $album */
+			foreach ($albums as $album) {
+				$has_descendants = !$album->isLeaf();
 
-				return false;
+				// Don't set attribute `parent_id` manually, but use specialized
+				// methods of the nested set `NodeTrait` to keep the enumeration
+				// of the tree consistent
+				// `appendNode` also internally calls `save` on the model
+				$target_album->appendNode($album);
+
+				AlbumListingCacheFlushRequested::dispatchIf($has_descendants);
 			}
+			$target_album->fixOwnershipOfChildren();
 		} else {
-			$albumID = null;
+			/** @var Album $album */
+			foreach ($albums as $album) {
+				$has_descendants = !$album->isLeaf();
+
+				// Don't set attribute `parent_id` manually, but use specialized
+				// methods of the nested set `NodeTrait` to keep the enumeration
+				// of the tree consistent
+				$album->saveAsRoot();
+
+				AlbumListingCacheFlushRequested::dispatchIf($has_descendants);
+			}
 		}
 
-		$albums = Album::whereIn('id', $albumIDs)->get();
-		$no_error = true;
+		(new SyncRecursiveNsfw())->do();
 
-		foreach ($albums as $album) {
-			$album->parent_id = $albumID;
-			$no_error &= $album->save();
-		}
-		// Tree should be updated by itself here.
-
-		if ($no_error && $album_master !== null) {
-			// updat owner
-			$album_master->descendants()->update(['owner_id' => $album_master->owner_id]);
-			$album_master->get_all_photos()->update(['photos.owner_id' => $album_master->owner_id]);
-		}
-
-		return $no_error;
+		AlbumSaved::dispatchIf($moved_album_ids !== [], $moved_album_ids, [$target_album?->id]);
+		AlbumChildrenChanged::dispatchIf($old_parent_ids->isNotEmpty(), $old_parent_ids->all());
 	}
 }

@@ -1,0 +1,150 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Image\Handlers;
+
+use App\Contracts\Image\ImageHandlerInterface;
+use App\Contracts\Image\MediaFile;
+use App\Contracts\Image\StreamStats;
+use App\DTO\ImageDimension;
+use App\Exceptions\Handler;
+use App\Exceptions\Internal\LycheeLogicException;
+use App\Exceptions\MediaFileOperationException;
+use App\Repositories\ConfigManager;
+
+class ImageHandler extends BaseImageHandler implements ImageHandlerInterface
+{
+	public const NO_HANDLER_EXCEPTION_MSG = 'No suitable image handler found';
+
+	/**
+	 * The class names of the engines to use.
+	 *
+	 * @var string[]
+	 */
+	protected array $engine_classes = [];
+
+	/**
+	 * The selected image handler.
+	 *
+	 * @var ImageHandlerInterface|null
+	 */
+	protected ?ImageHandlerInterface $engine = null;
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function __construct()
+	{
+		$config_manager = resolve(ConfigManager::class);
+		if ($config_manager->hasImagick()) {
+			$this->engine_classes[] = ImagickHandler::class;
+		}
+		$this->engine_classes[] = GdHandler::class;
+	}
+
+	public function __clone()
+	{
+		if ($this->engine !== null) {
+			$this->engine = clone $this->engine;
+		}
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function load(MediaFile $file): void
+	{
+		$this->reset();
+		$last_exception = null;
+
+		foreach ($this->engine_classes as $engine_class) {
+			try {
+				$engine = new $engine_class();
+				if ($engine instanceof ImageHandlerInterface) {
+					$this->engine = $engine;
+					$this->engine->load($file);
+
+					return;
+				}
+				throw new LycheeLogicException('$engine is not an instance of ImageHandlerInterface');
+			} catch (\Throwable $e) {
+				// Report the error to the log, but don't fail yet.
+				Handler::reportSafely($e);
+				$last_exception = $e;
+				$this->engine = null;
+			}
+		}
+
+		throw new MediaFileOperationException(self::NO_HANDLER_EXCEPTION_MSG, $last_exception);
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function save(MediaFile $file, bool $collect_statistics = false): ?StreamStats
+	{
+		return $this->engine->save($file, $collect_statistics);
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function reset(): void
+	{
+		$this->engine?->reset();
+		$this->engine = null;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function cloneAndScale(ImageDimension $dst_dim): ImageHandlerInterface
+	{
+		return $this->engine->cloneAndScale($dst_dim);
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function cloneAndChangeOpacity(float $opacity): ImageHandlerInterface
+	{
+		return $this->engine->cloneAndChangeOpacity($opacity);
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function cloneAndCrop(ImageDimension $dst_dim): ImageHandlerInterface
+	{
+		return $this->engine->cloneAndCrop($dst_dim);
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function rotate(int $angle): ImageDimension
+	{
+		return $this->engine->rotate($angle);
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function getDimensions(): ImageDimension
+	{
+		return $this->engine->getDimensions();
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function isLoaded(): bool
+	{
+		return $this->engine !== null && $this->engine->isLoaded();
+	}
+}

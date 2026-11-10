@@ -1,5 +1,11 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\Providers;
 
 use Illuminate\Cache\RateLimiting\Limit;
@@ -24,9 +30,9 @@ class RouteServiceProvider extends ServiceProvider
 	 *
 	 * In addition, it is set as the URL generator's root namespace.
 	 *
-	 * @var string
+	 * @var string|null
 	 */
-	protected $namespace = null;
+	protected $namespace;
 
 	/**
 	 * Define your route model bindings, pattern filters, etc.
@@ -37,23 +43,16 @@ class RouteServiceProvider extends ServiceProvider
 	{
 		$this->configureRateLimiting();
 
-		$this->routes(function () {
-			Route::middleware('install')
-				->group(base_path('routes/install.php'));
-
-			Route::middleware('web-admin')
-				->group(base_path('routes/admin.php'));
-
-			Route::prefix('api')
-				->middleware('api')
-				->group(base_path('routes/api.php'));
-
-			Route::middleware('web')
-				->group(base_path('routes/livewire.php'));
-
-			Route::middleware('web')
-				->group(base_path('routes/web.php'));
-		});
+		// Note: `web.php` must be registered last, because it contains a
+		// "catch all" route and the routes are considered in a "first match"
+		// fashion.
+		Route::middleware('web-admin')->group(base_path('routes/web-admin-v2.php'));
+		Route::middleware('embed')->prefix('api/v2')->group(base_path('routes/api_v2_embed.php'));
+		Route::middleware('api')->prefix('api/v2')->group(base_path('routes/api_v2.php'));
+		Route::middleware('api')->prefix('api/v2')->group(base_path('routes/api_v2_shop.php'));
+		Route::middleware('api')->prefix('api/v3')->group(base_path('routes/api_v3.php'));
+		Route::middleware('web-install')->group(base_path('routes/web-install.php'));
+		Route::middleware('web')->group(base_path('routes/web_v2.php'));
 	}
 
 	/**
@@ -64,7 +63,9 @@ class RouteServiceProvider extends ServiceProvider
 	protected function configureRateLimiting()
 	{
 		RateLimiter::for('api', function (Request $request) {
+			// @codeCoverageIgnoreStart
 			return Limit::perMinute(60);
+			// @codeCoverageIgnoreEnd
 		});
 	}
 }

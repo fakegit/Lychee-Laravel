@@ -1,0 +1,176 @@
+<template>
+	<Fieldset v-if="user && user.id !== null" :legend="$t('profile.login.header')" :toggleable="true" class="hover:border-primary pt-2">
+		<form>
+			<div v-if="user.is_ldap" class="w-full p-4 text-muted">
+				<UIcon name="lucide:info" class="ltr:mr-2 rtl:ml-2" />
+				<span>{{ $t("profile.login.ldap_managed") }}</span>
+				<UButton
+					color="neutral"
+					variant="soft"
+					class="w-full font-bold shrink mt-4 justify-center"
+					@click="
+						() => {
+							isApiTokenOpen = !isApiTokenOpen;
+						}
+					"
+				>
+					{{ $t("profile.login.api_token") }}
+				</UButton>
+			</div>
+			<template v-else>
+				<div v-if="is_basic_auth_enabled" class="w-full mb-6">
+					<div class="pb-4">
+						{{ $t("profile.login.enter_current_password") }}
+					</div>
+					<UFormField :label="$t('profile.login.current_password')">
+						<InputPassword id="oldPassword" v-model="oldPassword" :invalid="!oldPassword && hasChanged" />
+					</UFormField>
+				</div>
+				<div v-if="is_basic_auth_enabled" class="w-full mb-6">
+					<UFormField :label="$t('profile.login.username')">
+						<InputText id="username" v-model="username" />
+					</UFormField>
+					<UButton color="neutral" variant="link" class="mt-4 p-0" @click="togglePasswordChange">
+						{{ $t(isChangePasswordOpen ? "profile.login.cancel_password_change" : "profile.login.change_password") }}
+					</UButton>
+					<template v-if="isChangePasswordOpen">
+						<div class="pt-4">
+							{{ $t("profile.login.credentials_update") }}
+						</div>
+						<UFormField class="mt-4" :label="$t('profile.login.new_password')">
+							<InputPassword id="password" v-model="password" has-check />
+						</UFormField>
+						<UFormField class="mt-4" :label="$t('profile.login.confirm_new_password')">
+							<InputPassword id="password_confirmation" v-model="password_confirmation" :invalid="password !== password_confirmation" />
+						</UFormField>
+						<div class="text-muted mt-2">
+							<UIcon name="lucide:circle-question-mark" class="inline-block size-4 text-info" />
+							<span v-html="$t('profile.login.password_strength_info')"></span>
+						</div>
+					</template>
+				</div>
+				<div class="w-full">
+					<div class="pb-4">
+						{{ $t("profile.login.email_instruction") }}
+					</div>
+					<UFormField :label="$t('profile.login.email')">
+						<InputText id="email" v-model="email" />
+					</UFormField>
+				</div>
+				<UFieldGroup class="w-full mt-4">
+					<UButton color="primary" variant="solid" class="flex-1 font-bold justify-center" @click="save">
+						{{ $t("profile.login.change") }}
+					</UButton>
+					<UButton
+						color="neutral"
+						variant="soft"
+						class="flex-1 font-bold justify-center"
+						@click="
+							() => {
+								isApiTokenOpen = !isApiTokenOpen;
+							}
+						"
+					>
+						{{ $t("profile.login.api_token") }}
+					</UButton>
+				</UFieldGroup>
+			</template>
+		</form>
+	</Fieldset>
+	<ApiToken v-model="isApiTokenOpen" />
+</template>
+<script setup lang="ts">
+import { computed, ref } from "vue";
+import { useAppToast } from "@/v8/composables/useAppToast";
+import InputPassword from "@/v8/components/forms/basic/InputPassword.vue";
+import InputText from "@/v8/components/forms/basic/InputText.vue";
+import ApiToken from "@/v8/components/forms/profile/ApiToken.vue";
+import ProfileService from "@/services/profile-service";
+import AuthService from "@/services/auth-service";
+import { trans } from "laravel-vue-i18n";
+import Fieldset from "@/v8/components/forms/basic/Fieldset.vue";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+import { storeToRefs } from "pinia";
+
+const isApiTokenOpen = ref(false);
+const isChangePasswordOpen = ref(false);
+
+const lycheeStore = useLycheeStateStore();
+const { is_basic_auth_enabled } = storeToRefs(lycheeStore);
+
+const user = ref<App.Http.Resources.Models.UserResource | undefined>(undefined);
+const oldPassword = ref<string | undefined>(undefined);
+const username = ref<string | undefined>(undefined);
+const password = ref<string | undefined>(undefined);
+const password_confirmation = ref<string | undefined>(undefined);
+const email = ref<string | undefined>(undefined);
+
+const toast = useAppToast();
+
+const hasChanged = computed(() => {
+	return (
+		username.value !== user.value?.username ||
+		(password.value ?? "") !== "" ||
+		(password_confirmation.value ?? "") !== "" ||
+		(email.value ?? "") !== (user.value?.email ?? "")
+	);
+});
+
+function togglePasswordChange() {
+	isChangePasswordOpen.value = !isChangePasswordOpen.value;
+	if (!isChangePasswordOpen.value) {
+		password.value = undefined;
+		password_confirmation.value = undefined;
+	}
+}
+
+function load() {
+	AuthService.user().then((data) => {
+		user.value = data.data;
+		username.value = data.data.username as string;
+		email.value = data.data.email ?? undefined;
+	});
+}
+
+function save() {
+	if (hasChanged.value === true && !oldPassword.value && is_basic_auth_enabled.value) {
+		toast.add({
+			severity: "error",
+			summary: trans("profile.login.missing_fields"),
+			life: 3000,
+		});
+		return;
+	}
+
+	ProfileService.update({
+		old_password: oldPassword.value as string,
+		username: username.value as string,
+		password: password.value ?? null,
+		password_confirmation: password_confirmation.value ?? null,
+		email: email.value ?? null,
+	})
+		.then((data) => {
+			oldPassword.value = undefined;
+			username.value = data.data.username as string;
+			password.value = undefined;
+			password_confirmation.value = undefined;
+			isChangePasswordOpen.value = false;
+			email.value = data.data.email ?? undefined;
+			toast.add({
+				severity: "success",
+				summary: trans("toasts.success"),
+				life: 3000,
+			});
+		})
+		.catch((e) => {
+			toast.add({
+				severity: "error",
+				summary: trans("toasts.error"),
+				detail: e.response.data.message,
+				life: 3000,
+			});
+		});
+}
+
+load();
+</script>

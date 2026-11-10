@@ -1,0 +1,109 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Http\Resources\Editable;
+
+use App\DTO\AlbumSortingCriterion;
+use App\DTO\PhotoSortingCriterion;
+use App\Enum\AspectRatioType;
+use App\Enum\LicenseType;
+use App\Enum\PhotoLayoutType;
+use App\Enum\TimelineAlbumGranularity;
+use App\Enum\TimelinePhotoGranularity;
+use App\Http\Resources\Models\Utils\PersonNameResource;
+use App\Models\Album;
+use App\Models\PersonAlbum;
+use App\Models\TagAlbum;
+use Spatie\LaravelData\Data;
+use Spatie\TypeScriptTransformer\Attributes\TypeScript;
+
+#[TypeScript()]
+class EditableBaseAlbumResource extends Data
+{
+	public string $id;
+	public string $title;
+	public ?string $slug;
+	public ?string $description;
+	public ?string $copyright;
+	public ?LicenseType $license;
+	public ?PhotoSortingCriterion $photo_sorting;
+	public ?AlbumSortingCriterion $album_sorting;
+	public ?AspectRatioType $aspect_ratio;
+	public ?PhotoLayoutType $photo_layout;
+	public ?string $header_id;
+	public ?string $cover_id;
+	public ?TimelineAlbumGranularity $album_timeline;
+	public ?TimelinePhotoGranularity $photo_timeline;
+	public ?bool $is_date_scrubber_enabled;
+	// Feature 068 (FR-068-15): ISO-8601 string with offset, or null. Only ever
+	// set for a real Album (Flow/Landing Page both only ever query Album, never
+	// TagAlbum/PersonAlbum) - null for the other two, same as license/header_id/etc above.
+	public ?string $published_at;
+
+	/** @var string[] */
+	public array $tags = [];
+	/** @var array<PersonNameResource> */
+	public array $persons = [];
+	public bool $is_and = true;
+	public bool $is_model_album;
+	public bool $is_pinned;
+
+	public function __construct(Album|TagAlbum|PersonAlbum $album)
+	{
+		$this->id = $album->id;
+		$this->title = $album->title;
+		$this->slug = request()->verify()->is_supporter() ? $album->slug : null;
+		$this->description = $album->description;
+		$this->copyright = $album->copyright;
+		$this->photo_sorting = $album->photo_sorting;
+		$this->is_model_album = false;
+		$this->license = null;
+		$this->album_sorting = null;
+		$this->header_id = null;
+		$this->cover_id = null;
+		$this->photo_layout = $album->photo_layout;
+		$this->album_timeline = null;
+		$this->photo_timeline = $album->photo_timeline;
+		$this->is_date_scrubber_enabled = $album->is_date_scrubber_enabled;
+		$this->is_pinned = $album->is_pinned;
+		$this->published_at = null;
+
+		if ($album instanceof Album) {
+			$this->is_model_album = true;
+			$this->license = $album->license;
+			$this->album_sorting = $album->album_sorting;
+			$this->header_id = $album->header_id !== null ? trim($album->header_id) : null;
+			$this->cover_id = $album->cover_id;
+			$this->aspect_ratio = $album->album_thumb_aspect_ratio;
+			$this->album_timeline = $album->album_timeline;
+			$this->published_at = $album->published_at?->toIso8601String();
+			// Note: this is the album's own descriptive tags (Feature 050), unrelated
+			// to the photo-matching criteria tags populated below for TagAlbum.
+			$this->tags = $album->tags->map(fn ($t) => $t->name)->all();
+		}
+
+		if ($album instanceof TagAlbum) {
+			$this->cover_id = $album->cover_id;
+			$this->tags = $album->tags->map(fn ($t) => $t->name)->all();
+			$this->is_and = $album->is_and;
+		}
+
+		if ($album instanceof PersonAlbum) {
+			$this->persons = $album->persons
+				->map(fn ($p) => new PersonNameResource($p))
+				->values()
+				->all();
+			$this->is_and = $album->is_and;
+		}
+	}
+
+	public static function fromModel(Album|TagAlbum|PersonAlbum $album): EditableBaseAlbumResource
+	{
+		return new self($album);
+	}
+}

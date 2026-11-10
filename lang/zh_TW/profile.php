@@ -1,0 +1,91 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Profile page
+    |--------------------------------------------------------------------------
+    */
+    'title' => '個人資料',
+    'login' => [
+        'header' => '個人資料',
+        'enter_current_password' => '請輸入您目前的密碼：',
+        'current_password' => '目前的密碼',
+        'credentials_update' => '您的登入憑證將變更為以下內容：',
+        'username' => '使用者名稱',
+        'change_password' => '變更密碼',
+        'cancel_password_change' => '取消變更密碼',
+        'new_password' => '新密碼',
+        'confirm_new_password' => '確認新密碼',
+        'password_strength_info' => '密碼強度是使用 <a href="https://github.com/dropbox/zxcvbn" class="inline-block border-b border-info border-dashed" target="_blank" rel="noreferrer">zxcvbn 演算法</a>估算而得。',
+        'email_instruction' => '請在下方新增您的電子郵件以接收電子郵件通知。若要停止接收，只需移除下方的電子郵件即可。',
+        'email' => '電子郵件',
+        'change' => '變更登入資訊',
+        'api_token' => 'API Token ...',
+        'missing_fields' => '缺少欄位',
+        'ldap_managed' => '使用者登入資訊由 LDAP 管理。',
+    ],
+    'register' => [
+        'username_exists' => '使用者名稱已存在。',
+        'password_mismatch' => '密碼不一致。',
+        'signup' => '註冊',
+        'error' => '註冊帳號時發生錯誤。',
+        'success' => '您的帳號已成功建立。',
+    ],
+    'admin_setup' => [
+        'header' => '設定您的管理員帳號',
+        'welcome' => '歡迎使用 Lychee，<br>讓我們從建立管理員帳號開始。',
+        'submit' => '建立管理員帳號',
+        'success' => '已成功建立管理員帳號。',
+        'error' => '建立管理員帳號時發生錯誤。',
+        'already_exists' => '已設定過管理員帳號。',
+    ],
+    'token' => [
+        'unavailable' => '您已檢視過此權杖。',
+        'no_data' => '尚未產生任何 API 權杖。',
+        'disable' => '停用',
+        'disabled' => '權杖已停用',
+        'warning' => '此權杖不會再次顯示。請複製並妥善保存。',
+        'reset' => '重設權杖',
+        'create' => '建立新權杖',
+    ],
+    'oauth' => [
+        'header' => 'OAuth',
+        'header_not_available' => 'OAuth 無法使用',
+        'setup_env' => '請在 .env 中設定憑證',
+        'token_registered' => '已註冊 %s 權杖。',
+        'setup' => '設定 %s',
+        'reset' => '重設',
+        'credential_deleted' => '憑證已刪除！',
+    ],
+    'u2f' => [
+        'header' => '通行金鑰／MFA／2FA',
+        'info' => '此功能僅提供使用 WebAuthn 進行驗證，以取代使用者名稱與密碼。',
+        'empty' => '憑證清單是空的！',
+        'not_secure' => '環境不安全。無法使用 U2F。',
+        'new' => '註冊新裝置。',
+        'credential_deleted' => '憑證已刪除！',
+        'credential_updated' => '憑證已更新！',
+        'credential_registred' => '註冊成功！',
+        '5_chars' => '至少 5 個字元。',
+    ],
+    'preferences' => [
+        'header' => '偏好設定',
+        'save' => '儲存偏好設定',
+        'reset' => '重設',
+        'change_saved' => '偏好設定已儲存！',
+    ],
+    'shared_albums' => [
+        'instruction' => '選擇共享相簿（其他使用者的相簿）在您圖庫中的顯示方式：',
+        'mode_default' => '使用伺服器預設值',
+        'mode_default_desc' => '沿用伺服器的預設顯示模式。',
+        'mode_show' => '一併顯示',
+        'mode_show_desc' => '共享相簿會顯示在您自己的相簿下方。',
+        'mode_separate' => '分開的分頁',
+        'mode_separate_desc' => '在「我的相簿」與「與我共享」兩個分頁中分別檢視相簿。',
+        'mode_separate_shared_only' => '僅限共享',
+        'mode_separate_shared_only_desc' => '分開的分頁，只顯示直接共享的相簿（不含公開相簿）。',
+        'mode_hide' => '隱藏',
+        'mode_hide_desc' => '不顯示任何共享相簿。',
+    ],
+];

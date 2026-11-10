@@ -1,0 +1,149 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Relations;
+
+use App\Contracts\Exceptions\InternalLycheeException;
+use App\Exceptions\Internal\NotImplementedException;
+use App\Models\Album;
+use App\Models\Extensions\SortingDecorator;
+use App\Policies\AlbumPolicy;
+use App\Policies\AlbumQueryPolicy;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
+
+/**
+ * @disregard
+ *
+ * @extends BaseHasManyPhotos<Album>
+ */
+class HasManyPhotosRecursively extends BaseHasManyPhotos
+{
+	protected AlbumQueryPolicy $album_query_policy;
+
+	/**
+	 * @param Album $owning_album
+	 * @param bool  $include_nsfw if false, photos in sensitive albums below the owning album are left out
+	 */
+	public function __construct(Album $owning_album, protected bool $include_nsfw = true)
+	{
+		// Sic! We must initialize attributes of this class before we call
+		// the parent constructor.
+		// The parent constructor calls `addConstraints` and thus our own
+		// attributes must be initialized by then
+		$this->album_query_policy = resolve(AlbumQueryPolicy::class);
+		parent::__construct($owning_album);
+	}
+
+	public function getParent(): Album
+	{
+		/**
+		 * We know that the parent is of type `Album`,
+		 * because it was set in the constructor as `$owningAlbum`.
+		 *
+		 * @noinspection PhpIncompatibleReturnTypeInspection
+		 */
+		return $this->parent;
+	}
+
+	/**
+	 * Adds the constraints for single owning album to the base query.
+	 *
+	 * This method is called by the framework, if the related photos of a
+	 * single albums are fetched.
+	 *
+	 * @throws InternalLycheeException
+	 */
+	public function addConstraints(): void
+	{
+		if (static::$constraints) {
+			$this->addEagerConstraints([$this->getParent()]);
+		}
+	}
+
+	/**
+	 * Adds the constraints for a list of owning album to the base query.
+	 *
+	 * This method is called by the framework, if the related photos of a
+	 * list of owning albums are fetched.
+	 * The unified result of the query is mapped to the specific albums
+	 * by {@link HasManyPhotosRecursively::match()}.
+	 *
+	 * @param Album[] $albums an array of {@link \App\Models\Album} whose photos are loaded
+	 *
+	 * @return void
+	 *
+	 * @throws InternalLycheeException
+	 */
+	public function addEagerConstraints(array $albums): void
+	{
+		if (count($albums) !== 1) {
+			throw new NotImplementedException('eagerly fetching all photos of an album is not implemented for multiple albums');
+		}
+
+		$user = Auth::user();
+		$unlocked_album_ids = AlbumPolicy::getUnlockedAlbumIDs();
+
+		$this->photo_query_policy
+			->applySearchabilityFilter(
+				query: $this->getRelationQuery(),
+				user: $user,
+				unlocked_album_ids: $unlocked_album_ids,
+				origin: $albums[0],
+				include_nsfw: $this->include_nsfw
+			);
+
+		$sorting = $albums[0]->getEffectivePhotoSorting();
+		(new SortingDecorator($this->getRelationQuery()))
+			->orderPhotosBy($sorting->column, $sorting->order)
+			->applyOrdering();
+	}
+
+	/**
+	 * @return Collection<int,\App\Models\Photo>
+	 */
+	public function getResults(): Collection
+	{
+		/** @var Album $album */
+		$album = $this->parent;
+		if ($album === null || !Gate::check(AlbumPolicy::CAN_ACCESS, $album)) {
+			return $this->related->newCollection();
+		}
+
+		return parent::getResults();
+	}
+
+	/**
+	 * Maps a collection of eagerly fetched photos to the given owning albums.
+	 *
+	 * @param Album[]                           $albums   the list of owning albums
+	 * @param Collection<int,\App\Models\Photo> $photos   collection of {@link Photo} models which needs to be mapped to the albums
+	 * @param string                            $relation the name of the relation
+	 *
+	 * @return array<int,Album>
+	 *
+	 * @throws NotImplementedException
+	 */
+	public function match(array $albums, Collection $photos, $relation): array
+	{
+		if (count($albums) !== 1) {
+			throw new NotImplementedException('eagerly fetching all photos of an album is not implemented for multiple albums');
+		}
+		/** @var Album $album */
+		$album = $albums[0];
+
+		if (!Gate::check(AlbumPolicy::CAN_ACCESS, $album)) {
+			$album->setRelation($relation, $this->related->newCollection());
+		} else {
+			$album->setRelation($relation, $photos->values());
+		}
+
+		return $albums;
+	}
+}

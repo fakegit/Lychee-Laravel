@@ -1,0 +1,57 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Moderation page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'الإشراف',
+    'description' => 'راجع ووافق على الصور التي رفعها المستخدمون ذوو مستوى الثقة "تحقق" قبل أن تصبح مرئية للعامة.',
+    'approve_selected' => 'الموافقة على المحدد',
+    'delete_selected' => 'حذف المحدد',
+    'selected' => 'محدد',
+    'no_pending' => 'لا توجد صور بانتظار الإشراف.',
+    'approved' => 'تمت الموافقة على الصور بنجاح.',
+    'col_thumbnail' => 'صورة مصغرة',
+    'col_title' => 'العنوان',
+    'col_owner' => 'المالك',
+    'col_album' => 'الألبوم',
+    'col_uploaded' => 'تاريخ الرفع',
+    'col_nsfw' => 'حساس',
+    'nsfw_review' => 'مراجعة المحتوى الحساس',
+    'overlay_confidence' => 'الثقة: :value%',
+    'overlay_area' => 'المساحة: :value',
+    'overlay_mode_all' => 'المحتوى الحساس: الكل',
+    'overlay_mode_block' => 'المحتوى الحساس: حظر',
+    'overlay_mode_review' => 'المحتوى الحساس: مراجعة',
+    'overlay_mode_sensitive' => 'المحتوى الحساس: حساس',
+    // Feature 089: moderation history and NSFW findings review.
+    'tab_pending' => 'قيد الانتظار',
+    'tab_history' => 'السجل',
+    'no_history' => 'لا يوجد سجل إشراف.',
+    'col_photo' => 'الصورة',
+    'col_event' => 'الحدث',
+    'col_by' => 'بواسطة',
+    'col_date' => 'التاريخ',
+    'event_held' => 'محجوزة',
+    'event_approved' => 'تمت الموافقة',
+    'source_upload' => 'الرفع',
+    'source_nsfw_scan' => 'فحص المحتوى الحساس',
+    'history_title' => 'الإشراف',
+    'history_show_all' => 'عرض الكل (:count)',
+    'findings_title' => 'نتائج فحص المحتوى الحساس',
+    'findings_description' => 'راجع نتائج فحص المحتوى الحساس وتجاهل الخاطئة منها. تُحذف النتائج المتجاهلة، وقد يعثر عليها فحص جديد مرة أخرى.',
+    'findings_empty' => 'لا توجد نتائج لفحص المحتوى الحساس.',
+    'findings_col_status' => 'الحالة',
+    'findings_col_findings' => 'النتائج',
+    'findings_col_albums' => 'الألبومات',
+    'findings_hidden' => 'مخفية',
+    'findings_dismiss' => 'تجاهل',
+    'findings_dismiss_all' => 'تجاهل جميع نتائج هذه الصورة',
+    'findings_dismiss_selected' => 'تجاهل المحدد',
+    'findings_confirm_header' => 'تجاهل النتائج',
+    'findings_confirm' => 'تجاهل جميع نتائج :count صورة؟ سيتم حذفها.',
+    'findings_dismissed' => 'تم تجاهل النتائج.',
+    'findings_error' => 'تعذر تحميل نتائج فحص المحتوى الحساس أو تغييرها.',
+];

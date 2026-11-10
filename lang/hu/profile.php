@@ -1,0 +1,91 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Profile page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Profil',
+    'login' => [
+        'header' => 'Profil',
+        'enter_current_password' => 'Adja meg jelenlegi jelszavát:',
+        'current_password' => 'Jelenlegi jelszó',
+        'credentials_update' => 'A bejelentkezési adatai a következőkre módosulnak:',
+        'username' => 'Felhasználónév',
+        'change_password' => 'Jelszó módosítása',
+        'cancel_password_change' => 'Jelszómódosítás megszakítása',
+        'new_password' => 'Új jelszó',
+        'confirm_new_password' => 'Új jelszó megerősítése',
+        'password_strength_info' => 'A jelszó erőssége a <a href="https://github.com/dropbox/zxcvbn" class="inline-block border-b border-info border-dashed" target="_blank" rel="noreferrer">zxcvbn algoritmus</a> segítségével becsült érték.',
+        'email_instruction' => 'Adja meg alább e-mail címét az e-mail értesítések fogadásához. Ha nem szeretne több e-mailt kapni, egyszerűen törölje az e-mail címét.',
+        'email' => 'E-mail',
+        'change' => 'Bejelentkezés módosítása',
+        'api_token' => 'API Token ...',
+        'missing_fields' => 'Hiányzó mezők',
+        'ldap_managed' => 'A felhasználói bejelentkezési adatokat az LDAP kezeli.',
+    ],
+    'token' => [
+        'unavailable' => 'Ezt a tokent már megtekintette.',
+        'no_data' => 'Még nem lett API token létrehozva.',
+        'disable' => 'Letiltás',
+        'disabled' => 'Token letiltva',
+        'warning' => 'Ez a token többé nem jelenik meg. Másolja ki, és tárolja biztonságos helyen.',
+        'reset' => 'Token visszaállítása',
+        'create' => 'Új token létrehozása',
+    ],
+    'oauth' => [
+        'header' => 'OAuth',
+        'header_not_available' => 'Az OAuth nem érhető el',
+        'setup_env' => 'Állítsa be a hitelesítési adatokat a .env fájlban',
+        'token_registered' => '%s token regisztrálva.',
+        'setup' => '%s beállítása',
+        'reset' => 'visszaállítás',
+        'credential_deleted' => 'Hitelesítési adat törölve!',
+    ],
+    'u2f' => [
+        'header' => 'Passkey/MFA/2FA',
+        'info' => 'Ez csak lehetővé teszi a WebAuthn használatát a felhasználónév és jelszó helyett a hitelesítéshez.',
+        'empty' => 'A hitelesítési adatok listája üres!',
+        'not_secure' => 'A környezet nem biztonságos. Az U2F nem érhető el.',
+        'new' => 'Új eszköz regisztrálása.',
+        'credential_deleted' => 'Hitelesítési adat törölve!',
+        'credential_updated' => 'Hitelesítési adat frissítve!',
+        'credential_registred' => 'Sikeres regisztráció!',
+        '5_chars' => 'Legalább 5 karakter.',
+    ],
+    'register' => [
+        'username_exists' => 'A felhasználónév már létezik.',
+        'password_mismatch' => 'A jelszavak nem egyeznek.',
+        'signup' => 'Regisztráció',
+        'error' => 'Hiba történt a fiók regisztrálása közben.',
+        'success' => 'A fiókja sikeresen létrejött.',
+    ],
+    'admin_setup' => [
+        'header' => 'Adminisztrátori fiók beállítása',
+        'welcome' => 'Üdvözli a Lychee,<br>kezdjük egy adminisztrátori fiók létrehozásával.',
+        'submit' => 'Adminisztrátori fiók létrehozása',
+        'success' => 'Az adminisztrátori fiók sikeresen létrehozva.',
+        'error' => 'Hiba történt az adminisztrátori fiók létrehozása közben.',
+        'already_exists' => 'Már létezik adminisztrátori fiók.',
+    ],
+    'preferences' => [
+        'header' => 'Beállítások',
+        'save' => 'Beállítás mentése',
+        'reset' => 'Visszaállítás',
+        'change_saved' => 'Beállítás mentve!',
+    ],
+    'shared_albums' => [
+        'instruction' => 'Válassza ki, hogyan jelenjenek meg a megosztott albumok (más felhasználók albumai) a galériájában:',
+        'mode_default' => 'Szerver alapértelmezésének használata',
+        'mode_default_desc' => 'A szerver alapértelmezett láthatósági módjának öröklése.',
+        'mode_show' => 'Megjelenítés a listában',
+        'mode_show_desc' => 'A megosztott albumok a saját albumai alatt jelennek meg.',
+        'mode_separate' => 'Külön lapok',
+        'mode_separate_desc' => 'Albumok megtekintése külön "Saját albumok" és "Megosztva velem" lapokon.',
+        'mode_separate_shared_only' => 'Csak megosztottak',
+        'mode_separate_shared_only_desc' => 'Külön lapok, amelyek csak a közvetlenül megosztott albumokat mutatják (a nyilvános albumok nélkül).',
+        'mode_hide' => 'Elrejtés',
+        'mode_hide_desc' => 'Ne jelenjenek meg megosztott albumok.',
+    ],
+];

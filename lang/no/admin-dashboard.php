@@ -1,0 +1,90 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+return [
+    'title' => 'Administrasjonspanel',
+    'overview' => 'Oversikt',
+    'tools' => 'Verktøy',
+    'tool_groups' => [
+        'core' => 'Admin',
+        'monitoring' => 'Overvåking',
+        'extensions' => 'Utvidelser',
+    ],
+    'refresh' => 'Oppdater',
+    'metrics' => [
+        'photos_count' => 'Bilder',
+        'albums_count' => 'Album',
+        'users_count' => 'Brukere',
+        'storage_bytes' => 'Lagringsplass brukt',
+        'queued_jobs' => 'Jobber i kø',
+        'failed_jobs_24h' => 'Mislykkede jobber (24t)',
+        'last_successful_job_at' => 'Siste vellykkede jobb',
+    ],
+    'errors' => [
+        'partial' => 'Noen målinger kunne ikke lastes inn.',
+    ],
+    'security' => [
+        'title' => 'Sikkerhetsvarsler',
+        'description' => 'Følgende sårbarheter påvirker din nåværende Lychee-versjon. Vennligst oppdater så snart som mulig.',
+        'no_cvss' => '(ingen CVSS-poengsum)',
+    ],
+    'update' => [
+        'title' => 'Oppdateringsstatus',
+        'update_available' => 'En nyere versjon er tilgjengelig (nåværende: :current, nyeste: :latest).',
+        'git_update_available' => 'Installasjonen din er :count commits bak master.',
+    ],
+    'nsfw_config' => [
+        'title' => 'NSFW-gjenkjenning og moderering',
+        'tab_settings' => 'Innstillinger',
+        'tab_presets' => 'Forhåndsinnstillinger',
+        'description' => 'Konfigurer automatisk NSFW-innholdsgjenkjenning for opplastede bilder. Bilder skannes asynkront via den eksterne klassifiseringstjenesten.',
+        'enable' => 'Aktiver NSFW-klassifisering',
+        'preset' => 'Gjenkjenningsforhåndsinnstilling',
+        'scan_trusted' => 'Skann pålitelige brukere',
+        'section_general' => 'Generelt',
+        'section_actions' => 'Handlinger',
+        'actions_explanation' => 'Konfigurer hva som skjer når et <b>Blokker</b>-funn oppdages, per tillitsnivå. <b>Gjennomgå</b>-funn sender alltid Kryss av- og Overvåk-brukere til moderering, og godkjennes automatisk for Stol på, men verifiser- og Pålitelig-brukere.',
+        'sensitive_explanation' => '<b>Følsomme</b> funn for Kryss av-brukere sendes alltid til moderering. For andre tillitsnivåer styrer følgende innstillinger om bildets album flagges som følsomt, og hva som skjer når bildet ikke har noe album.',
+        'sensitive_album' => 'Følsomt: albumhandling',
+        'sensitive_no_album' => 'Følsomt: reserveløsning uten album',
+        'section_hide_on_scan' => 'Skjul under skanning',
+        'hide_on_scan_explanation' => 'Velg per tillitsnivå om bilder skal skjules midlertidig mens NSFW-skanningen pågår. Dette forhindrer at potensielt problematisk innhold blir synlig før skanningen er fullført.',
+        'hide_on_scan_warning' => 'Når dette er aktivert, skjules bilder (plasseres i modereringskøen) mens NSFW-skanningen pågår.<br> Hvis NSFW-klassifisereren krasjer eller er utilgjengelig, forblir bildet skjult til det godkjennes manuelt av en administrator.',
+        'hide_monitor' => 'Skjul Overvåk-bilder under skanning',
+        'hide_tbv' => 'Skjul Stol på, men verifiser-bilder under skanning',
+        'hide_trusted' => 'Skjul Pålitelig-bilder under skanning',
+        'section_matrix' => 'Matrise for tillitsnivå × funn',
+        'matrix_explanation' => 'Hvert opplastede bilde skannes av NSFW-klassifisereren, som returnerer funn i tre alvorlighetsnivåer: <b>Blokker</b> (eksplisitt innhold), <b>Gjennomgå</b> (tvilsomt innhold) og <b>Følsomt</b> (mildt innhold). Handlingen for hvert funn avhenger av opplasterens tillitsnivå. Denne tabellen oppsummerer gjeldende konfigurasjon.',
+        'matrix_trust_level' => 'Tillitsnivå',
+        'matrix_check' => 'Kryss av',
+        'matrix_monitor' => 'Overvåk',
+        'matrix_tbv' => 'Stol på, men verifiser',
+        'matrix_trusted' => 'Pålitelig',
+        'runtime_config' => 'Tjenestens kjøretidskonfigurasjon',
+        'presets' => 'Tilgjengelige forhåndsinnstillinger',
+        'key' => 'Nøkkel',
+        'value' => 'Verdi',
+        'active' => 'Aktiv',
+        'block' => 'Blokker',
+        'review' => 'Gjennomgå',
+        'sensitive' => 'Følsomt',
+        'none' => 'Ingen',
+        'matrix_moderate' => 'Moderer',
+        'matrix_approve' => 'Godkjenn',
+        'matrix_mark_album' => 'Merk album',
+        'matrix_nothing' => 'Ingenting',
+        'legend_block' => 'Bildet slettes permanent.',
+        'legend_moderate' => 'Bildet holdes tilbake for admin-gjennomgang.',
+        'legend_approve' => 'Bildet godtas, funnet logges.',
+        'legend_mark_album' => 'Bildets album flagges som følsomt.',
+        'legend_nothing' => 'Ingen handling utføres.',
+    ],
+    'nsfw_findings' => [
+        'title' => 'NSFW-funn',
+    ],
+];

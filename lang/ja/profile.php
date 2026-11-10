@@ -1,0 +1,91 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Profile page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'プロフィール',
+    'login' => [
+        'header' => 'プロフィール',
+        'enter_current_password' => '現在のパスワードを入力してください:',
+        'current_password' => '現在のパスワード',
+        'credentials_update' => '認証情報は次のように変更されます:',
+        'username' => 'ユーザー名',
+        'change_password' => 'パスワードを変更',
+        'cancel_password_change' => 'パスワード変更をキャンセル',
+        'new_password' => '新しいパスワード',
+        'confirm_new_password' => '新しいパスワード（確認）',
+        'password_strength_info' => 'パスワード強度は <a href="https://github.com/dropbox/zxcvbn" class="inline-block border-b border-info border-dashed" target="_blank" rel="noreferrer">zxcvbn アルゴリズム</a>による推定値です。',
+        'email_instruction' => 'メール通知を受け取るには、以下にメールアドレスを追加してください。メールの受信を停止するには、以下のメールアドレスを削除してください。',
+        'email' => 'メールアドレス',
+        'change' => 'ログイン情報を変更',
+        'api_token' => 'API Token ...',
+        'missing_fields' => '未入力の項目があります',
+        'ldap_managed' => 'ユーザーのログイン情報はLDAPで管理されています。',
+    ],
+    'register' => [
+        'username_exists' => 'このユーザー名はすでに存在します。',
+        'password_mismatch' => 'パスワードが一致しません。',
+        'signup' => '新規登録',
+        'error' => 'アカウントの登録中にエラーが発生しました。',
+        'success' => 'アカウントが作成されました。',
+    ],
+    'admin_setup' => [
+        'header' => '管理者アカウントの設定',
+        'welcome' => 'Lychee へようこそ。<br>まずは管理者アカウントを作成しましょう。',
+        'submit' => '管理者アカウントを作成',
+        'success' => '管理者アカウントを作成しました。',
+        'error' => '管理者アカウントの作成中にエラーが発生しました。',
+        'already_exists' => '管理者アカウントはすでに設定されています。',
+    ],
+    'token' => [
+        'unavailable' => 'このトークンはすでに表示済みです。',
+        'no_data' => 'API トークンはまだ生成されていません。',
+        'disable' => '無効化',
+        'disabled' => 'トークンは無効です',
+        'warning' => 'このトークンは二度と表示されません。コピーして安全な場所に保管してください。',
+        'reset' => 'トークンをリセット',
+        'create' => '新しいトークンを作成',
+    ],
+    'oauth' => [
+        'header' => 'OAuth',
+        'header_not_available' => 'OAuth は利用できません',
+        'setup_env' => '.env に認証情報を設定してください',
+        'token_registered' => '%s トークンを登録しました。',
+        'setup' => '%s を設定',
+        'reset' => 'リセット',
+        'credential_deleted' => '認証情報を削除しました！',
+    ],
+    'u2f' => [
+        'header' => 'パスキー/MFA/2FA',
+        'info' => 'ユーザー名とパスワードの代わりに WebAuthn で認証できるようにするだけの機能です。',
+        'empty' => '認証情報のリストは空です！',
+        'not_secure' => '環境が安全ではありません。U2F は利用できません。',
+        'new' => '新しいデバイスを登録します。',
+        'credential_deleted' => '認証情報を削除しました！',
+        'credential_updated' => '認証情報を更新しました！',
+        'credential_registred' => '登録に成功しました！',
+        '5_chars' => '5文字以上。',
+    ],
+    'preferences' => [
+        'header' => '環境設定',
+        'save' => '設定を保存',
+        'reset' => 'リセット',
+        'change_saved' => '設定を保存しました！',
+    ],
+    'shared_albums' => [
+        'instruction' => '共有アルバム（他のユーザーのアルバム）をギャラリーにどのように表示するかを選択してください:',
+        'mode_default' => 'サーバーの既定値を使用',
+        'mode_default_desc' => 'サーバーの既定の表示モードを継承します。',
+        'mode_show' => 'インライン表示',
+        'mode_show_desc' => '共有アルバムは自分のアルバムの下に表示されます。',
+        'mode_separate' => 'タブを分ける',
+        'mode_separate_desc' => '「マイアルバム」と「共有されたアルバム」の別々のタブで表示します。',
+        'mode_separate_shared_only' => '共有のみ',
+        'mode_separate_shared_only_desc' => '直接共有されたアルバムのみを別タブで表示します（公開アルバムは除外）。',
+        'mode_hide' => '非表示',
+        'mode_hide_desc' => '共有アルバムを一切表示しません。',
+    ],
+];

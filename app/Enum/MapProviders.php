@@ -1,0 +1,41 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Enum;
+
+/**
+ * Define the possible Map providers and their layer & attributions.
+ * (will be used later in Livewire).
+ */
+enum MapProviders: string
+{
+	case OpenStreetMapOrg = 'OpenStreetMap.org';
+	case OpenStreetMapDe = 'OpenStreetMap.de';
+	case OpenStreetMapFr = 'OpenStreetMap.fr';
+	case RRZE = 'RRZE';
+
+	public function getLayer(): string
+	{
+		return match ($this) {
+			self::OpenStreetMapOrg => 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+			self::OpenStreetMapDe => 'https://tile.openstreetmap.de/{z}/{x}/{y}.png ',
+			self::OpenStreetMapFr => 'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png ',
+			self::RRZE => 'https://{s}.osm.rrze.fau.de/osmhd/{z}/{x}/{y}.png',
+		};
+	}
+
+	public function getAtributionHtml(): string
+	{
+		return match ($this) {
+			self::OpenStreetMapOrg => '&copy; <a href="https://openstreetmap.org/copyright">' . __('gallery.map.osm_contributors') . '</a>',
+			self::OpenStreetMapDe => '&copy; <a href="https://openstreetmap.org/copyright">' . __('gallery.map.osm_contributors') . '</a>',
+			self::OpenStreetMapFr => '&copy; <a href="https://openstreetmap.org/copyright">' . __('gallery.map.osm_contributors') . '</a>',
+			self::RRZE => '&copy; <a href="https://openstreetmap.org/copyright">' . __('gallery.map.osm_contributors') . '</a>',
+		};
+	}
+}

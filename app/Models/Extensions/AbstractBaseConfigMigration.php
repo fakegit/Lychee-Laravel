@@ -1,0 +1,38 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Models\Extensions;
+
+use Illuminate\Database\Migrations\Migration;
+
+/**
+ * @codeCoverageIgnore still used and tested... but not in tests
+ */
+abstract class AbstractBaseConfigMigration extends Migration
+{
+	public const BOOL = '0|1';
+	public const POSITIVE = 'positive';
+	public const INT = 'int';
+	public const STRING = 'string';
+	public const PERCENT_RANGE = 'int:0:100';
+
+	/**
+	 * @return array<int,array{key:string,value:string,is_secret:bool,cat:string,type_range:string,description:string,order?:int,not_on_docker?:bool,is_expert?:bool,level?:int,details?:string,required_keys?:string|null}>
+	 */
+	abstract public function getConfigs(): array;
+
+	/**
+	 * Run the migrations.
+	 */
+	abstract public function up(): void;
+
+	/**
+	 * Reverse the migrations.
+	 */
+	abstract public function down(): void;
+}

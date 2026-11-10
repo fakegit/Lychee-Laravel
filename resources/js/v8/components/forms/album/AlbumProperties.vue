@@ -1,0 +1,722 @@
+<template>
+	<Fieldset class="w-full shrink-0">
+		<template #legend>
+			<span class="flex items-center gap-2"><UIcon :name="legendIcon" />{{ legendLabel }}</span>
+		</template>
+		<form class="flex flex-col gap-4">
+			<UFormField :label="$t('gallery.album.properties.title')">
+				<UInput id="title" v-model="title" type="text" class="w-full" />
+			</UFormField>
+			<div v-if="(is_se_enabled || is_se_preview_enabled) && is_expert_mode" dir="ltr" class="flex items-center gap-1">
+				<UTooltip :text="$t('gallery.album.properties.copy_slug_url')">
+					<div class="text-muted flex items-center" :class="{ 'cursor-pointer': slug }" @click="copySlugUrl">
+						<span>{{ Constants.BASE_URL }}/gallery/</span>
+					</div>
+				</UTooltip>
+				<UInput id="slug" v-model="slugForInput" type="text" :disabled="is_se_preview_enabled" class="flex-1" />
+				<UTooltip :text="$t('gallery.album.properties.generate_slug')">
+					<UButton icon="lucide:refresh-cw" variant="ghost" color="primary" :disabled="is_se_preview_enabled" @click="generateSlug" />
+				</UTooltip>
+			</div>
+			<UFormField :label="$t('gallery.album.properties.description')">
+				<UTextarea id="description" v-model="descriptionForInput" class="w-full" :rows="6" />
+			</UFormField>
+			<div class="flex gap-4 flex-wrap">
+				<UFormField :label="$t('gallery.album.properties.photo_ordering')">
+					<USelectMenu v-model="photoSortingColumnModel" :items="photoSortingColumnItems" label-key="label" class="w-62">
+						<template #default="{ modelValue }">{{ selectedLabel(modelValue) }}</template>
+						<template #item-label="{ item }">{{ $t(item.label) }}</template>
+					</USelectMenu>
+				</UFormField>
+				<UFormField :label="$t('gallery.album.properties.asc/desc')">
+					<USelectMenu
+						v-model="photoSortingOrder"
+						:items="sortingOrderItems"
+						label-key="label"
+						:disabled="isDefaultOption(photoSortingColumn)"
+						class="w-62"
+					>
+						<template #default="{ modelValue }">{{ selectedLabel(modelValue) }}</template>
+						<template #item-label="{ item }">{{ $t(item.label) }}</template>
+					</USelectMenu>
+				</UFormField>
+			</div>
+			<template v-if="is_model_album">
+				<div class="flex gap-4 flex-wrap">
+					<UFormField :label="$t('gallery.album.properties.children_ordering')">
+						<USelectMenu v-model="albumSortingColumnModel" :items="albumSortingColumnItems" label-key="label" class="w-62">
+							<template #default="{ modelValue }">{{ selectedLabel(modelValue) }}</template>
+							<template #item-label="{ item }">{{ $t(item.label) }}</template>
+						</USelectMenu>
+					</UFormField>
+					<UFormField :label="$t('gallery.album.properties.asc/desc')">
+						<USelectMenu
+							v-model="albumSortingOrder"
+							:items="sortingOrderItems"
+							label-key="label"
+							:disabled="isDefaultOption(albumSortingColumn)"
+							class="w-62"
+						>
+							<template #default="{ modelValue }">{{ selectedLabel(modelValue) }}</template>
+							<template #item-label="{ item }">{{ $t(item.label) }}</template>
+						</USelectMenu>
+					</UFormField>
+				</div>
+				<template v-if="is_expert_mode">
+					<div class="flex gap-4">
+						<UFormField :label="$t('gallery.album.properties.header')">
+							<USelectMenu
+								v-model="header_id"
+								:items="headersOptions"
+								label-key="title"
+								:placeholder="$t('gallery.album.properties.automatic')"
+								class="w-72"
+								@update:open="requestThumbUrls"
+							>
+								<template #item-leading="{ item }">
+									<UIcon v-if="item.id === 'compact'" name="lucide:shrink" />
+									<UIcon v-else-if="item.id === 'map'" name="lucide:map" />
+									<Thumb
+										v-else
+										class="w-4 rounded-sm"
+										:album-id="albumId"
+										:photo-id="item.id"
+										type="thumb"
+										v-bind="optionThumbProps(item.thumb, tileUrlsStore.urlsOf(item.id))"
+									/>
+								</template>
+							</USelectMenu>
+						</UFormField>
+						<UFormField :label="$t('gallery.album.properties.cover')">
+							<USelectMenu
+								v-model="cover_id"
+								:items="coverOptions"
+								label-key="title"
+								:placeholder="$t('gallery.album.properties.automatic')"
+								class="w-72"
+								clear
+								@update:open="requestThumbUrls"
+							>
+								<template #item-leading="{ item }">
+									<Thumb
+										class="w-4 rounded-sm"
+										:album-id="albumId"
+										:photo-id="item.id"
+										type="thumb"
+										v-bind="optionThumbProps(item.thumb, tileUrlsStore.urlsOf(item.id))"
+									/>
+								</template>
+							</USelectMenu>
+						</UFormField>
+					</div>
+					<UFormField :label="$t('gallery.album.properties.license')">
+						<USelectMenu v-model="license" :items="licenseOptions" label-key="label" class="w-72">
+							<template #default="{ modelValue }">{{ selectedLabel(modelValue) }}</template>
+							<template #item-label="{ item }">{{ $t(item.label) }}</template>
+						</USelectMenu>
+					</UFormField>
+					<UFormField :label="$t('gallery.album.properties.copyright')">
+						<UInput id="copyright" v-model="copyright" class="w-full" />
+					</UFormField>
+				</template>
+			</template>
+			<div class="flex flex-wrap gap-4">
+				<UFormField v-if="is_model_album" :label="$t('gallery.album.properties.aspect_ratio')">
+					<USelectMenu v-model="aspectRatio" :items="aspectRatioItems" label-key="label" class="w-72">
+						<template #default="{ modelValue }">{{ selectedLabel(modelValue) }}</template>
+						<template #item-label="{ item }">{{ $t(item.label) }}</template>
+					</USelectMenu>
+				</UFormField>
+				<UFormField :label="$t('gallery.album.properties.layout')">
+					<USelectMenu v-model="photoLayout" :items="photoLayoutItems" label-key="label" class="w-72">
+						<template #default="{ modelValue }">{{ selectedLabel(modelValue) }}</template>
+						<template #item-label="{ item }">{{ $t(item.label) }}</template>
+					</USelectMenu>
+				</UFormField>
+			</div>
+			<UFormField v-if="is_model_album && is_flow_opt_in_strategy" :label="$t('gallery.album.properties.flow_publish_date')">
+				<div class="flex items-center gap-2">
+					<UTooltip :text="$t('gallery.album.properties.flow_publish_date_toggle')">
+						<UCheckbox v-model="is_published_at_enabled" />
+					</UTooltip>
+					<input
+						id="publishedAtDate"
+						v-model="publishedAtDateLocal"
+						type="datetime-local"
+						step="1"
+						:disabled="!is_published_at_enabled"
+						:class="{
+							'border-0 p-0 border-b hover:border-b-primary-400 focus:border-b-primary-400 bg-transparent': true,
+							'border-dashed': !is_published_at_enabled,
+						}"
+					/>
+					<USelectMenu
+						v-model="publishedAtTzOption"
+						:items="timeZoneOptions"
+						label-key="label"
+						:disabled="!is_published_at_enabled"
+						class="w-72"
+					>
+						<template #item-label="{ item }">{{ item.label }}</template>
+					</USelectMenu>
+				</div>
+			</UFormField>
+			<div v-if="is_expert_mode" class="flex flex-wrap gap-4">
+				<UFormField v-if="is_model_album" :label="$t('gallery.album.properties.album_timeline')">
+					<USelectMenu v-model="albumTimeline" :items="albumTimelineOptions" label-key="label" class="w-72">
+						<template #default="{ modelValue }">{{ selectedLabel(modelValue) }}</template>
+						<template #item-label="{ item }">{{ $t(item.label) }}</template>
+					</USelectMenu>
+				</UFormField>
+				<UFormField :label="$t('gallery.album.properties.photo_timeline')">
+					<USelectMenu v-model="photoTimeline" :items="photoTimelineOptions" label-key="label" class="w-72">
+						<template #default="{ modelValue }">{{ selectedLabel(modelValue) }}</template>
+						<template #item-label="{ item }">{{ $t(item.label) }}</template>
+					</USelectMenu>
+				</UFormField>
+			</div>
+			<UFormField :label="$t('gallery.album.properties.date_scrubber')">
+				<USelectMenu v-model="dateScrubber" :items="dateScrubberOptions" label-key="label" class="w-72">
+					<template #default="{ modelValue }">{{ selectedLabel(modelValue) }}</template>
+					<template #item-label="{ item }">{{ $t(item.label) }}</template>
+				</USelectMenu>
+			</UFormField>
+
+			<div v-if="!is_person_album && (!is_model_album || is_expert_mode)" class="flex flex-col gap-2">
+				<UFormField :label="$t(is_model_album ? 'gallery.album.properties.tags' : 'gallery.album.properties.show_tags')">
+					<TagsInput v-model="tags" :add="false" />
+				</UFormField>
+				<USwitch
+					v-if="!is_model_album"
+					v-model="is_and"
+					class="my-2"
+					:label="$t('gallery.album.properties.all_tags_must_match')"
+					:ui="{ label: 'text-highlighted' }"
+				/>
+			</div>
+			<div v-if="is_person_album" class="flex flex-col gap-2">
+				<UFormField :label="$t('dialogs.new_person_album.set_persons')">
+					<PersonsInput v-model="selectedPersons" :placeholder="$t('dialogs.new_person_album.set_persons')" />
+				</UFormField>
+				<USwitch
+					v-model="is_and"
+					class="my-2"
+					:label="$t('gallery.album.properties.all_persons_must_match')"
+					:ui="{ label: 'text-highlighted' }"
+				/>
+			</div>
+		</form>
+	</Fieldset>
+</template>
+<script setup lang="ts">
+import Fieldset from "@/v8/components/forms/basic/Fieldset.vue";
+import Constants from "@/services/constants";
+import { computed, onMounted, ref, watch, nextTick } from "vue";
+import { useDebounceFn } from "@vueuse/core";
+import AlbumService, { UpdateAbumData, UpdateTagAlbumData, UpdatePersonAlbumData } from "@/services/album-service";
+import { useAlbumListStore } from "@/stores/AlbumListState";
+import PersonsInput from "@/v8/components/forms/basic/PersonsInput.vue";
+import {
+	photoSortingColumnsOptions,
+	albumSortingColumnsOptions,
+	sortingOrdersOptions,
+	licenseOptions,
+	aspectRatioOptions,
+	photoLayoutOptions,
+	SelectOption,
+	SelectBuilders,
+	timelinePhotoGranularityOptions,
+	timelineAlbumGranularityOptions,
+	timeZoneOptions,
+} from "@/config/constants";
+import {
+	isDefaultOption,
+	optionFor,
+	optionThumbProps,
+	sortingOrderFor,
+	timelineSelectOptions,
+	withDefaultOption,
+} from "@/v8/utils/albumSelectOptions";
+import Thumb from "@/v8/components/thumbs/Thumb.vue";
+import { useTileUrlsStore } from "@/stores/TileUrlsState";
+import { useAppToast } from "@/v8/composables/useAppToast";
+import { trans } from "laravel-vue-i18n";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+import { storeToRefs } from "pinia";
+import TagsInput from "@/v8/components/forms/basic/TagsInput.vue";
+import { usePhotosStore } from "@/stores/PhotosState";
+import { useAlbumStore } from "@/stores/AlbumState";
+
+type HeaderOption = {
+	id: string;
+	title?: string;
+	thumb?: string | null;
+};
+
+const props = defineProps<{
+	expertMode: boolean;
+	legendIcon: string;
+	legendLabel: string;
+}>();
+
+const LycheeState = useLycheeStateStore();
+const albumStore = useAlbumStore();
+const albumListStore = useAlbumListStore();
+const { is_se_enabled, is_se_preview_enabled, is_flow_opt_in_strategy } = storeToRefs(LycheeState);
+
+const photosStore = usePhotosStore();
+const tileUrlsStore = useTileUrlsStore();
+
+const toast = useAppToast();
+const isLoading = ref(true);
+const is_model_album = ref(true);
+const is_expert_mode = computed(() => props.expertMode);
+const albumId = ref("");
+const title = ref("");
+const slug = ref<string | null>(null);
+
+function copySlugUrl() {
+	if (slug.value === null || slug.value.trim() === "") {
+		return;
+	}
+
+	const url = Constants.BASE_URL + "/gallery/" + slug.value;
+	navigator.clipboard.writeText(url).then(() => {
+		toast.add({ severity: "success", summary: trans("dialogs.share_album.url_copied"), life: 2000 });
+	});
+}
+
+function generateSlug() {
+	if (title.value === null || title.value.trim() === "") {
+		return;
+	}
+	slug.value = title.value
+		.toLowerCase()
+		.replace(/&/g, "and")
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/-+/g, "-")
+		.replace(/^-|-$/g, "")
+		.replace(/^[0-9]+/, "")
+		.replace(/^-/, "")
+		.substring(0, 250);
+}
+const description = ref<string | null>(null);
+// UInput/UTextarea's v-model requires `string | undefined` (no null); slug/description carry
+// `null` throughout the rest of this component's logic and payload construction.
+const slugForInput = computed<string | undefined>({
+	get: () => slug.value ?? undefined,
+	set: (v) => {
+		slug.value = v ?? null;
+	},
+});
+const descriptionForInput = computed<string | undefined>({
+	get: () => description.value ?? undefined,
+	set: (v) => {
+		description.value = v ?? null;
+	},
+});
+function selectedLabel<T>(option: SelectOption<T> | undefined): string {
+	// A non-breaking space (matching USelectMenu's own placeholder fallback) keeps the
+	// trigger's line box at its normal height; an empty string collapses it.
+	return option ? trans(option.label) : " ";
+}
+
+// Feature 105 (FR-105-02): a stored `null` (gallery setting) is the "Default" entry.
+const photoSortingColumnItems = withDefaultOption(photoSortingColumnsOptions);
+const albumSortingColumnItems = withDefaultOption(albumSortingColumnsOptions);
+// An order follows its column (FR-105-03), so its list has no "Default" entry.
+const sortingOrderItems: SelectOption<App.Enum.OrderSortingType | null>[] = sortingOrdersOptions;
+const aspectRatioItems = withDefaultOption(aspectRatioOptions);
+const photoLayoutItems = withDefaultOption(photoLayoutOptions);
+
+const photoSortingColumn = ref<SelectOption<App.Enum.ColumnSortingPhotoType | null> | undefined>(undefined);
+const photoSortingOrder = ref<SelectOption<App.Enum.OrderSortingType | null> | undefined>(undefined);
+const albumSortingColumn = ref<SelectOption<App.Enum.ColumnSortingAlbumType | null> | undefined>(undefined);
+const albumSortingOrder = ref<SelectOption<App.Enum.OrderSortingType | null> | undefined>(undefined);
+const photoLayout = ref<SelectOption<App.Enum.PhotoLayoutType | null> | undefined>(undefined);
+const photoTimeline = ref<SelectOption<App.Enum.TimelinePhotoGranularity | null> | undefined>(undefined);
+const albumTimeline = ref<SelectOption<App.Enum.TimelineAlbumGranularity | null> | undefined>(undefined);
+
+// The API takes a sort column only with its order (FR-105-03).
+const photoSortingColumnModel = computed<SelectOption<App.Enum.ColumnSortingPhotoType | null> | undefined>({
+	get: () => photoSortingColumn.value,
+	set: (column) => {
+		photoSortingColumn.value = column;
+		photoSortingOrder.value = sortingOrderFor(column, photoSortingOrder.value);
+	},
+});
+const albumSortingColumnModel = computed<SelectOption<App.Enum.ColumnSortingAlbumType | null> | undefined>({
+	get: () => albumSortingColumn.value,
+	set: (column) => {
+		albumSortingColumn.value = column;
+		albumSortingOrder.value = sortingOrderFor(column, albumSortingOrder.value);
+	},
+});
+
+// Feature 071 (FR-071-02): per-album date scrubber override — Default follows the gallery setting.
+type DateScrubberChoice = "default" | "enabled" | "disabled";
+const dateScrubberOptions: SelectOption<DateScrubberChoice>[] = [
+	{ value: "default", label: "gallery.album.properties.date_scrubber_default" },
+	{ value: "enabled", label: "gallery.album.properties.date_scrubber_enabled" },
+	{ value: "disabled", label: "gallery.album.properties.date_scrubber_disabled" },
+];
+const dateScrubber = ref<SelectOption<DateScrubberChoice> | undefined>(undefined);
+function toDateScrubberChoice(value: boolean | null | undefined): DateScrubberChoice {
+	if (value === true) {
+		return "enabled";
+	}
+	return value === false ? "disabled" : "default";
+}
+function fromDateScrubberChoice(choice: DateScrubberChoice | undefined): boolean | null {
+	if (choice === "enabled") {
+		return true;
+	}
+	return choice === "disabled" ? false : null;
+}
+const license = ref<SelectOption<App.Enum.LicenseType> | undefined>(undefined);
+const copyright = ref<string | undefined>(undefined);
+const tags = ref<string[]>([]);
+const selectedPersons = ref<App.Http.Resources.Models.PersonResource[]>([]);
+const is_person_album = ref<boolean>(false);
+const aspectRatio = ref<SelectOption<App.Enum.AspectRatioType | null> | undefined>(undefined);
+const header_id = ref<HeaderOption | undefined>(undefined);
+const cover_id = ref<HeaderOption | null | undefined>(undefined);
+const is_and = ref<boolean>(false);
+
+// Feature 068 (FR-068-15): Flow publish date, mirrors PhotoEdit.vue's
+// taken_at checkbox + datetime-local + timezone-select pattern exactly.
+const is_published_at_enabled = ref<boolean>(false);
+const publishedAtDate = ref<Date | undefined>(undefined);
+const publishedAtTz = ref<string | undefined>(undefined);
+const publishedAtTzOption = computed<SelectOption<string> | undefined>({
+	get: () => timeZoneOptions.find((o) => o.value === publishedAtTz.value),
+	set: (v) => {
+		publishedAtTz.value = v?.value;
+	},
+});
+// Native <input type="datetime-local"> uses "YYYY-MM-DDTHH:mm:ss" in local time, with no timezone.
+function dateToLocalInputValue(d: Date | undefined): string {
+	if (d === undefined) return "";
+	const pad = (n: number) => n.toString().padStart(2, "0");
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+const publishedAtDateLocal = computed<string>({
+	get: () => dateToLocalInputValue(publishedAtDate.value),
+	set: (v) => {
+		publishedAtDate.value = v ? new Date(v) : undefined;
+	},
+});
+function browserUtcOffset(): string {
+	const minutes = -new Date().getTimezoneOffset();
+	const sign = minutes >= 0 ? "+" : "-";
+	const abs = Math.abs(minutes);
+	const pad = (n: number) => n.toString().padStart(2, "0");
+	return `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}
+// Default to "now" (in the browser's own timezone) the first time the
+// checkbox is enabled with no existing date - there is no EXIF-like source
+// to pre-fill from, unlike PhotoEdit.vue's taken_at.
+watch(is_published_at_enabled, (enabled) => {
+	if (enabled && publishedAtDate.value === undefined) {
+		publishedAtDate.value = new Date();
+		publishedAtTz.value = browserUtcOffset();
+	}
+});
+
+const photoTimelineOptions = computed(() => {
+	if (is_se_enabled.value) {
+		return timelineSelectOptions(timelinePhotoGranularityOptions);
+	}
+
+	return timelineSelectOptions(timelinePhotoGranularityOptions.slice(0, 2));
+});
+
+const albumTimelineOptions = computed(() => {
+	if (is_se_enabled.value) {
+		return timelineSelectOptions(timelineAlbumGranularityOptions);
+	}
+
+	return timelineSelectOptions(timelineAlbumGranularityOptions.slice(0, 2));
+});
+
+const headersOptions = computed(() => {
+	const list: HeaderOption[] = [
+		{
+			id: "compact",
+			title: trans("gallery.album.properties.compact_header"),
+		},
+	];
+	if (albumStore.config?.is_map_accessible === true || header_id.value?.id === "map") {
+		list.push({ id: "map", title: trans("gallery.album.properties.map_header") });
+	}
+	list.push(
+		...photosStore.photos.map((photo) => ({
+			id: photo.id,
+			title: photo.title,
+			thumb: photo.size_variants.thumb?.url,
+		})),
+	);
+	return list;
+});
+
+function buildHeaderId(value: string | null, photos: App.Http.Resources.Models.PhotoResource[]): HeaderOption | undefined {
+	if (value === null) {
+		return undefined;
+	}
+	if (value === "compact") {
+		return { id: "compact" };
+	}
+	if (value === "map") {
+		return { id: "map", title: trans("gallery.album.properties.map_header") };
+	}
+	const photo = photos.find((photo) => photo.id === value);
+	if (photo === undefined) {
+		return undefined;
+	}
+	return {
+		id: photo.id,
+		title: photo.title,
+		thumb: photo.size_variants.thumb?.url,
+	};
+}
+
+// FR-105-08: tile URLs of the photos the header and cover lists show, asked when either opens.
+function requestThumbUrls(open: boolean) {
+	if (open) {
+		tileUrlsStore.request(photosStore.photos.map((photo) => photo.id));
+	}
+}
+
+const coverOptions = computed<HeaderOption[]>(() =>
+	photosStore.photos.map((photo) => ({
+		id: photo.id,
+		title: photo.title,
+		thumb: photo.size_variants.thumb?.url,
+	})),
+);
+
+function buildCoverId(value: string | null, photos: App.Http.Resources.Models.PhotoResource[]): HeaderOption | undefined {
+	if (value === null) {
+		return undefined;
+	}
+	const photo = photos.find((photo) => photo.id === value);
+	if (photo === undefined) {
+		// The persisted cover isn't in the loaded page of photos; keep its id so
+		// saving another field doesn't serialize cover_id as null and clear it.
+		return { id: value };
+	}
+	return {
+		id: photo.id,
+		title: photo.title,
+		thumb: photo.size_variants.thumb?.url,
+	};
+}
+
+function load(editable: App.Http.Resources.Editable.EditableBaseAlbumResource, photos: App.Http.Resources.Models.PhotoResource[]) {
+	isLoading.value = true;
+	is_model_album.value = editable.is_model_album;
+	albumId.value = editable.id;
+	title.value = editable.title;
+	slug.value = editable.slug;
+	description.value = editable.description;
+	photoSortingColumn.value = optionFor(photoSortingColumnItems, editable.photo_sorting?.column);
+	photoSortingOrder.value = optionFor(withDefaultOption(sortingOrdersOptions), editable.photo_sorting?.order);
+	albumSortingColumn.value = optionFor(albumSortingColumnItems, editable.album_sorting?.column);
+	albumSortingOrder.value = optionFor(withDefaultOption(sortingOrdersOptions), editable.album_sorting?.order);
+	photoLayout.value = optionFor(photoLayoutItems, editable.photo_layout);
+	license.value = SelectBuilders.buildLicense(editable.license ?? undefined);
+	aspectRatio.value = optionFor(aspectRatioItems, editable.aspect_ratio);
+	// Looked up in the full lists: a granularity the visible list lacks (SE off) stays shown and is sent unchanged (FR-105-06).
+	albumTimeline.value = optionFor(timelineSelectOptions(timelineAlbumGranularityOptions), editable.album_timeline);
+	photoTimeline.value = optionFor(timelineSelectOptions(timelinePhotoGranularityOptions), editable.photo_timeline);
+	dateScrubber.value = dateScrubberOptions.find((o) => o.value === toDateScrubberChoice(editable.is_date_scrubber_enabled));
+	header_id.value = buildHeaderId(editable.header_id, photos);
+	cover_id.value = buildCoverId(editable.cover_id, photos);
+	tags.value = editable.tags;
+	is_and.value = editable.is_and ?? false;
+
+	if (editable.published_at === null || editable.published_at === undefined) {
+		is_published_at_enabled.value = false;
+		publishedAtDate.value = undefined;
+		publishedAtTz.value = undefined;
+	} else {
+		is_published_at_enabled.value = true;
+		const raw = editable.published_at;
+		publishedAtDate.value = new Date(raw.slice(0, 19));
+		publishedAtTz.value = raw.slice(19);
+	}
+
+	if (editable.persons && editable.persons.length > 0) {
+		is_person_album.value = true;
+		selectedPersons.value = editable.persons as App.Http.Resources.Models.PersonResource[];
+	} else {
+		is_person_album.value = false;
+	}
+
+	// Fields set above trigger the autosave watcher; only lift the guard once
+	// Vue has flushed those updates, so the load itself is never mistaken for a user edit.
+	nextTick(() => {
+		isLoading.value = false;
+	});
+}
+
+onMounted(() => {
+	LycheeState.load();
+	if (albumStore.tagOrModelAlbum?.editable !== undefined && albumStore.tagOrModelAlbum?.editable !== null) {
+		load(albumStore.tagOrModelAlbum.editable, photosStore.photos);
+	}
+});
+
+function save() {
+	if (is_model_album.value) {
+		saveAlbum();
+		return;
+	}
+	if (is_person_album.value) {
+		savePersonAlbum();
+		return;
+	}
+	saveTagAlbum();
+}
+
+function saveAlbum() {
+	const data: UpdateAbumData = {
+		album_id: albumId.value,
+		title: title.value,
+		slug: slug.value === "" ? null : slug.value,
+		license: license.value?.value ?? null,
+		description: description.value,
+		photo_sorting_column: photoSortingColumn.value?.value ?? null,
+		photo_sorting_order: photoSortingOrder.value?.value ?? null,
+		album_sorting_column: albumSortingColumn.value?.value ?? null,
+		album_sorting_order: albumSortingOrder.value?.value ?? null,
+		album_aspect_ratio: aspectRatio.value?.value ?? null,
+		copyright: copyright.value ?? null,
+		tags: tags.value,
+		header_id: header_id.value?.id === "compact" || header_id.value?.id === "map" ? null : (header_id.value?.id ?? null),
+		cover_id: cover_id.value?.id ?? null,
+		is_compact: header_id.value?.id === "compact",
+		is_map_header: header_id.value?.id === "map",
+		photo_layout: photoLayout.value?.value ?? null,
+		album_timeline: albumTimeline.value?.value ?? null,
+		photo_timeline: photoTimeline.value?.value ?? null,
+		is_date_scrubber_enabled: fromDateScrubberChoice(dateScrubber.value?.value),
+		is_pinned: albumStore.tagOrModelAlbum?.editable?.is_pinned ?? false,
+		published_at:
+			is_published_at_enabled.value && publishedAtDate.value !== undefined
+				? dateToLocalInputValue(publishedAtDate.value) + (publishedAtTz.value ?? "")
+				: null,
+	};
+	AlbumService.updateAlbum(data).then(() => {
+		toast.add({ severity: "success", summary: trans("toasts.success"), life: 3000 });
+		AlbumService.clearCache(albumId.value);
+		albumListStore.invalidate();
+		albumStore.loadHead();
+	});
+}
+
+function saveTagAlbum() {
+	if (tags.value.length === 0) {
+		toast.add({ severity: "error", summary: trans("toasts.error"), detail: trans("gallery.album.properties.tags_required"), life: 3000 });
+		return;
+	}
+
+	const data: UpdateTagAlbumData = {
+		album_id: albumId.value,
+		title: title.value,
+		slug: slug.value === "" ? null : slug.value,
+		tags: tags.value,
+		description: description.value,
+		photo_sorting_column: photoSortingColumn.value?.value ?? null,
+		photo_sorting_order: photoSortingOrder.value?.value ?? null,
+		copyright: copyright.value ?? null,
+		photo_layout: photoLayout.value?.value ?? null,
+		photo_timeline: photoTimeline.value?.value ?? null,
+		is_date_scrubber_enabled: fromDateScrubberChoice(dateScrubber.value?.value),
+		is_pinned: albumStore.tagOrModelAlbum?.editable?.is_pinned ?? false,
+		is_and: is_and.value,
+	};
+	AlbumService.updateTag(data).then(() => {
+		toast.add({ severity: "success", summary: trans("toasts.success"), life: 3000 });
+		AlbumService.clearCache(albumId.value);
+		albumStore.loadHead();
+	});
+}
+
+function savePersonAlbum() {
+	if (selectedPersons.value.length === 0) {
+		toast.add({ severity: "error", summary: trans("toasts.error"), detail: trans("gallery.album.properties.persons_required"), life: 3000 });
+		return;
+	}
+
+	const data: UpdatePersonAlbumData = {
+		album_id: albumId.value,
+		title: title.value,
+		slug: slug.value === "" ? null : slug.value,
+		persons: selectedPersons.value.map((p) => p.id),
+		description: description.value,
+		photo_sorting_column: photoSortingColumn.value?.value ?? null,
+		photo_sorting_order: photoSortingOrder.value?.value ?? null,
+		copyright: copyright.value ?? null,
+		photo_layout: photoLayout.value?.value ?? null,
+		photo_timeline: photoTimeline.value?.value ?? null,
+		is_date_scrubber_enabled: fromDateScrubberChoice(dateScrubber.value?.value),
+		is_pinned: albumStore.tagOrModelAlbum?.editable?.is_pinned ?? false,
+		is_and: is_and.value,
+	};
+	AlbumService.updatePerson(data).then(() => {
+		toast.add({ severity: "success", summary: trans("toasts.success"), life: 3000 });
+		AlbumService.clearCache(albumId.value);
+		albumStore.loadHead();
+	});
+}
+
+watch(
+	() => [albumStore.tagOrModelAlbum?.editable, photosStore.photos],
+	([editable, photos]) => {
+		if (editable !== null && editable !== undefined) {
+			load(editable as App.Http.Resources.Editable.EditableBaseAlbumResource, photos as App.Http.Resources.Models.PhotoResource[]);
+		}
+	},
+);
+
+const debouncedSave = useDebounceFn(save, 800);
+
+// Autosaves every field below so users never have to remember to hit a Save button.
+// `isLoading` distinguishes user edits from `load()` populating these same refs
+// (on mount and whenever the album is reloaded after a save), which would otherwise
+// re-trigger a save in a loop.
+watch(
+	[
+		title,
+		slug,
+		description,
+		photoSortingColumn,
+		photoSortingOrder,
+		albumSortingColumn,
+		albumSortingOrder,
+		photoLayout,
+		photoTimeline,
+		albumTimeline,
+		dateScrubber,
+		license,
+		copyright,
+		aspectRatio,
+		header_id,
+		cover_id,
+		tags,
+		is_and,
+		selectedPersons,
+		is_published_at_enabled,
+		publishedAtDate,
+		publishedAtTz,
+	],
+	() => {
+		if (isLoading.value) {
+			return;
+		}
+		debouncedSave();
+	},
+	{ deep: true },
+);
+</script>

@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    "Vue.volar",
+    "vitest.explorer",
+    "oxc.oxc-vscode",
+    "EditorConfig.EditorConfig",
+    "mikestead.dotenv",
+    "bradlc.vscode-tailwindcss",
+    "aaron-bond.better-comments",
+    "github.vscode-pull-request-github"
+  ]
+}

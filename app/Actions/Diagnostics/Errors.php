@@ -1,38 +1,120 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\Actions\Diagnostics;
 
-use App\Factories\DiagnosticsChecksFactory;
+use App\Actions\Diagnostics\Pipes\Checks\AdminUserExistsCheck;
+use App\Actions\Diagnostics\Pipes\Checks\AiVisionFaceRecognitionServiceCheck;
+use App\Actions\Diagnostics\Pipes\Checks\AiVisionFaceRecognitionServiceConfigCheck;
+use App\Actions\Diagnostics\Pipes\Checks\AiVisionNsfwServiceCheck;
+use App\Actions\Diagnostics\Pipes\Checks\AlbumSizeStatisticsCheck;
+use App\Actions\Diagnostics\Pipes\Checks\AlbumTakenAtRangeCheck;
+use App\Actions\Diagnostics\Pipes\Checks\AppUrlMatchCheck;
+use App\Actions\Diagnostics\Pipes\Checks\AuthDisabledCheck;
+use App\Actions\Diagnostics\Pipes\Checks\BasicPermissionCheck;
+use App\Actions\Diagnostics\Pipes\Checks\ConfigSanityCheck;
+use App\Actions\Diagnostics\Pipes\Checks\CountSizeVariantsCheck;
+use App\Actions\Diagnostics\Pipes\Checks\DBIntegrityCheck;
+use App\Actions\Diagnostics\Pipes\Checks\DBSupportCheck;
+use App\Actions\Diagnostics\Pipes\Checks\ForeignKeyListInfo;
+use App\Actions\Diagnostics\Pipes\Checks\GDSupportCheck;
+use App\Actions\Diagnostics\Pipes\Checks\HashCheck;
+use App\Actions\Diagnostics\Pipes\Checks\IframeCheck;
+use App\Actions\Diagnostics\Pipes\Checks\ImageOptCheck;
+use App\Actions\Diagnostics\Pipes\Checks\ImagickJxlCheck;
+use App\Actions\Diagnostics\Pipes\Checks\ImagickPdfCheck;
+use App\Actions\Diagnostics\Pipes\Checks\IniSettingsCheck;
+use App\Actions\Diagnostics\Pipes\Checks\KeygenApiTokenCheck;
+use App\Actions\Diagnostics\Pipes\Checks\LocalGeoDecodingServiceCheck;
+use App\Actions\Diagnostics\Pipes\Checks\MigrationCheck;
+use App\Actions\Diagnostics\Pipes\Checks\OldLicenseCheck;
+use App\Actions\Diagnostics\Pipes\Checks\OpCacheCheck;
+use App\Actions\Diagnostics\Pipes\Checks\PHPVersionCheck;
+use App\Actions\Diagnostics\Pipes\Checks\PlaceholderExistsCheck;
+use App\Actions\Diagnostics\Pipes\Checks\RecomputeQueueCheck;
+use App\Actions\Diagnostics\Pipes\Checks\SecurityAdvisoriesCheck;
+use App\Actions\Diagnostics\Pipes\Checks\SmallMediumExistsCheck;
+use App\Actions\Diagnostics\Pipes\Checks\StatisticsIntegrityCheck;
+use App\Actions\Diagnostics\Pipes\Checks\SupporterCheck;
+use App\Actions\Diagnostics\Pipes\Checks\TimezoneCheck;
+use App\Actions\Diagnostics\Pipes\Checks\WatermarkerEnabledCheck;
+use App\Actions\Diagnostics\Pipes\Checks\WebAuthnCredentialsCheck;
+use App\Actions\Diagnostics\Pipes\Checks\WebshopCheck;
+use App\Actions\Diagnostics\Pipes\Checks\WorkerCacheCheck;
+use App\DTO\DiagnosticData;
+use Illuminate\Pipeline\Pipeline;
 
 class Errors
 {
-	/** @var DiagnosticsChecksFactory */
-	private $diagnosticsChecksFactory;
-
-	public function __construct(DiagnosticsChecksFactory $diagnosticsChecksFactory)
-	{
-		$this->diagnosticsChecksFactory = $diagnosticsChecksFactory;
-	}
+	/**
+	 * The array of class pipes.
+	 *
+	 * @var array<int,class-string>
+	 */
+	private array $pipes = [
+		HashCheck::class,
+		AdminUserExistsCheck::class,
+		AuthDisabledCheck::class,
+		WebAuthnCredentialsCheck::class,
+		BasicPermissionCheck::class,
+		ConfigSanityCheck::class,
+		OldLicenseCheck::class,
+		KeygenApiTokenCheck::class,
+		DBSupportCheck::class,
+		GDSupportCheck::class,
+		ImageOptCheck::class,
+		IniSettingsCheck::class,
+		IframeCheck::class,
+		AppUrlMatchCheck::class,
+		MigrationCheck::class,
+		PHPVersionCheck::class,
+		OpCacheCheck::class,
+		TimezoneCheck::class,
+		ForeignKeyListInfo::class,
+		DBIntegrityCheck::class,
+		SmallMediumExistsCheck::class,
+		PlaceholderExistsCheck::class,
+		CountSizeVariantsCheck::class,
+		SupporterCheck::class,
+		ImagickPdfCheck::class,
+		ImagickJxlCheck::class,
+		WatermarkerEnabledCheck::class,
+		AiVisionFaceRecognitionServiceCheck::class,
+		AiVisionFaceRecognitionServiceConfigCheck::class,
+		AiVisionNsfwServiceCheck::class,
+		LocalGeoDecodingServiceCheck::class,
+		StatisticsIntegrityCheck::class,
+		AlbumSizeStatisticsCheck::class,
+		AlbumTakenAtRangeCheck::class,
+		RecomputeQueueCheck::class,
+		WorkerCacheCheck::class,
+		WebshopCheck::class,
+		SecurityAdvisoriesCheck::class,
+	];
 
 	/**
 	 * Return the list of error which are currently breaking Lychee.
 	 *
-	 * @return array
+	 * @param string[] $skip class names of checks that will be skipped
+	 *
+	 * @return DiagnosticData[] array of messages
 	 */
-	public function get(): array
+	public function get(array $skip = []): array
 	{
-		// Declare
+		$filtered_pipes = collect($this->pipes);
+		$this->pipes = $filtered_pipes->reject(fn ($p) => in_array((new \ReflectionClass($p))->getShortName(), $skip, true))->all();
+
+		/** @var DiagnosticData[] $errors */
 		$errors = [];
 
-		// @codeCoverageIgnoreStart
-
-		$checks = $this->diagnosticsChecksFactory->makeAll();
-
-		foreach ($checks as $check) {
-			$check->check($errors);
-		}
-		// @codeCoverageIgnoreEnd
-
-		return $errors;
+		return app(Pipeline::class)
+			->send($errors)
+			->through($this->pipes)
+			->thenReturn();
 	}
 }

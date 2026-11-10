@@ -1,0 +1,57 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Moderation page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Moderatie',
+    'description' => 'Bekijk en keur foto’s goed die zijn geüpload door gebruikers met vertrouwensniveau “Controle”, voordat ze openbaar zichtbaar worden.',
+    'approve_selected' => 'Selectie goedkeuren',
+    'delete_selected' => 'Selectie verwijderen',
+    'selected' => 'geselecteerd',
+    'no_pending' => 'Er zijn geen foto’s die wachten op moderatie.',
+    'approved' => 'Foto’s zijn succesvol goedgekeurd.',
+    'col_thumbnail' => 'Miniatuur',
+    'col_title' => 'Titel',
+    'col_owner' => 'Eigenaar',
+    'col_album' => 'Album',
+    'col_uploaded' => 'Geüpload',
+    'col_nsfw' => 'NSFW',
+    'nsfw_review' => 'NSFW-beoordeling',
+    'overlay_confidence' => 'Betrouwbaarheid: :value%',
+    'overlay_area' => 'Gebied: :value',
+    'overlay_mode_all' => 'NSFW: Alles',
+    'overlay_mode_block' => 'NSFW: Blokkeren',
+    'overlay_mode_review' => 'NSFW: Beoordelen',
+    'overlay_mode_sensitive' => 'NSFW: Gevoelig',
+    // Feature 089: moderation history and NSFW findings review.
+    'tab_pending' => 'In afwachting',
+    'tab_history' => 'Geschiedenis',
+    'no_history' => 'Geen moderatiegeschiedenis.',
+    'col_photo' => 'Foto',
+    'col_event' => 'Gebeurtenis',
+    'col_by' => 'Door',
+    'col_date' => 'Datum',
+    'event_held' => 'Tegengehouden',
+    'event_approved' => 'Goedgekeurd',
+    'source_upload' => 'Upload',
+    'source_nsfw_scan' => 'NSFW-scan',
+    'history_title' => 'Moderatie',
+    'history_show_all' => 'Alles weergeven (:count)',
+    'findings_title' => 'NSFW-bevindingen',
+    'findings_description' => 'Beoordeel de NSFW-bevindingen en wijs de onjuiste af. Afgewezen bevindingen worden verwijderd; een nieuwe scan kan ze opnieuw vinden.',
+    'findings_empty' => 'Geen NSFW-bevindingen.',
+    'findings_col_status' => 'Status',
+    'findings_col_findings' => 'Bevindingen',
+    'findings_col_albums' => 'Albums',
+    'findings_hidden' => 'Verborgen',
+    'findings_dismiss' => 'Afwijzen',
+    'findings_dismiss_all' => 'Alle bevindingen van deze foto afwijzen',
+    'findings_dismiss_selected' => 'Selectie afwijzen',
+    'findings_confirm_header' => 'Bevindingen afwijzen',
+    'findings_confirm' => 'Alle bevindingen van :count foto(\'s) afwijzen? Ze worden verwijderd.',
+    'findings_dismissed' => 'Bevindingen afgewezen.',
+    'findings_error' => 'De NSFW-bevindingen konden niet worden geladen of gewijzigd.',
+];

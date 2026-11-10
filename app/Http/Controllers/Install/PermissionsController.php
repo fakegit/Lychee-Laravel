@@ -1,36 +1,27 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\Http\Controllers\Install;
 
-use App\Actions\Install\DefaultConfig;
-use App\Actions\Install\PermissionsChecker;
-use App\Http\Controllers\Controller;
+use App\Actions\InstallUpdate\DefaultConfig;
+use App\Actions\InstallUpdate\PermissionsChecker;
+use Illuminate\Contracts\View\View;
+use Illuminate\Routing\Controller;
 
 final class PermissionsController extends Controller
 {
-	/**
-	 * @var PermissionsChecker
-	 */
-	protected $permissions;
-	/**
-	 * @var DefaultConfig
-	 */
-	protected $config;
-
-	/**
-	 * @param PermissionsChecker $checker
-	 * @param Config             $config
-	 */
-	public function __construct(PermissionsChecker $checker, DefaultConfig $config)
-	{
-		$this->permissions = $checker;
-		$this->config = $config;
+	public function __construct(
+		private PermissionsChecker $permissions,
+		private DefaultConfig $config,
+	) {
 	}
 
-	/**
-	 * @return View
-	 */
-	public function view()
+	public function view(): View
 	{
 		$perms = $this->permissions->check(
 			$this->config->get_permissions()

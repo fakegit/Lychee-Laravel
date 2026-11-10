@@ -1,0 +1,475 @@
+<template>
+	<LoadingProgress v-model:loading="albumsStore.isLoading" />
+	<UploadPanel v-if="albumsStore.rootRights?.can_upload" key="upload_modal" @refresh="refresh" />
+	<CameraCapture v-if="albumsStore.rootRights?.can_upload" key="camera_capture_modal" />
+	<KeybindingsHelp v-if="userStore.isLoggedIn" v-model:open="is_keybindings_help_open" />
+	<AlbumCreateDialog v-if="albumsStore.rootRights?.can_upload" key="create_album_modal" />
+	<AlbumCreateTagDialog v-if="albumsStore.rootRights?.can_upload" key="create_tag_album_modal" />
+	<AlbumCreatePersonDialog v-if="albumsStore.rootRights?.can_upload && lycheeStore.is_person_album_enabled" key="create_person_album_modal" />
+	<LoginModal v-if="!userStore.isLoggedIn" @logged-in="onLoggedIn" />
+	<WebauthnModal v-if="!userStore.isLoggedIn" @logged-in="onLoggedIn" />
+	<SecurityAdvisoriesModal v-if="isAdvisoriesVisible" :visible="isAdvisoriesVisible" :advisories="advisories" @update:visible="advisoryDismiss" />
+	<LiveMetrics v-if="userStore.isLoggedIn" />
+	<ImportFromLink v-if="albumsStore.rootRights?.can_upload" v-model:open="is_import_from_link_open" @refresh="refresh" />
+	<ImportFromServer v-if="albumsStore.rootRights?.can_import_from_server" v-model:open="is_import_from_server_open" @refresh="refresh" />
+	<DropBox v-if="albumsStore.rootRights?.can_upload" v-model:open="is_import_from_dropbox_open" @refresh="refresh" />
+
+	<AlbumsHeader v-if="userStore.isLoaded && albumsStore.rootConfig" :title="title" @refresh="refresh" @help="is_keybindings_help_open = true" />
+	<UMain>
+		<div class="flex">
+			<AlbumNavPanel />
+			<div class="flex-1 flex-col min-w-0">
+				<!-- Disabled only when there is no album to right-click at all: `selectableAlbums` is the pool the
+				     selection resolves against (own, pinned and shared scopes), so a guest whose public albums arrive
+				     through the shared scope still gets the menu (Feature 097, FR-097-06). -->
+				<UContextMenu :items="menuSections" :disabled="albumsStore.selectableAlbums.length === 0" class="contents">
+					<div
+						v-if="albumsStore.rootConfig && albumsStore.rootRights"
+						id="galleryView"
+						class="relative w-full h-full select-none"
+						@scroll="onScroll"
+					>
+						<SelectDrag :with-scroll="false" />
+						<!-- Virtual album panels: the gap separates consecutive rendered panels only (FR-098-08). -->
+						<div class="flex flex-col gap-4">
+							<!-- Smart Albums (always visible, above tabs per spec) -->
+							<AlbumThumbPanel
+								v-if="albumsStore.smartAlbumsPanel.length > 0"
+								header="gallery.smart_albums"
+								:albums="albumsStore.smartAlbumsPanel"
+								:is-alone="isVirtualPanelAlone"
+								:selected-albums="[]"
+								:is-timeline="false"
+							/>
+							<!-- Tag and Person Albums, when their settings give them their own category (Feature 098) -->
+							<AlbumThumbPanel
+								v-if="albumsStore.tagAlbumsPanel.length > 0"
+								header="gallery.tag_albums"
+								:albums="albumsStore.tagAlbumsPanel"
+								:is-alone="isVirtualPanelAlone"
+								:selected-albums="[]"
+								:is-timeline="false"
+							/>
+							<AlbumThumbPanel
+								v-if="albumsStore.personAlbumsPanel.length > 0"
+								header="gallery.person_albums"
+								:albums="albumsStore.personAlbumsPanel"
+								:is-alone="isVirtualPanelAlone"
+								:selected-albums="[]"
+								:is-timeline="false"
+							/>
+						</div>
+
+						<!-- Tabbed view for SEPARATE and SEPARATE_SHARED_ONLY modes (only when shared albums exist) -->
+						<template v-if="shouldShowTabs">
+							<UTabs v-model="activeTab" :items="tabItems" class="w-full" variant="link" :dir="flippedDir">
+								<template #my-albums>
+									<ResetDir>
+										<template v-if="albumsStore.pinnedAlbums.length > 0">
+											<AlbumThumbPanel
+												:is-timeline="false"
+												header="gallery.pinned_albums"
+												:albums="albumsStore.pinnedAlbums"
+												:is-alone="!displayAlbums.length"
+												:selected-albums="selectedAlbumsIds"
+												@clicked="albumSelect"
+												@contexted="contextMenuAlbumOpen"
+											/>
+										</template>
+										<AlbumRootPanelVirtual
+											scope="own"
+											header="gallery.albums"
+											:selected-albums="selectedAlbumsIds"
+											@clicked="albumSelect"
+											@selected="albumSelect"
+											@contexted="contextMenuAlbumOpen"
+										/>
+									</ResetDir>
+								</template>
+								<template #shared>
+									<ResetDir>
+										<AlbumRootPanelVirtual
+											scope="shared"
+											:selected-albums="selectedAlbumsIds"
+											@clicked="albumSelect"
+											@selected="albumSelect"
+											@contexted="contextMenuAlbumOpen"
+										/>
+									</ResetDir>
+								</template>
+							</UTabs>
+						</template>
+
+						<!-- Non-tabbed view for SHOW and HIDE modes (or when no shared albums) -->
+						<template v-else>
+							<template v-if="albumsStore.pinnedAlbums.length > 0">
+								<AlbumThumbPanel
+									:is-timeline="false"
+									header="gallery.pinned_albums"
+									:albums="albumsStore.pinnedAlbums"
+									:is-alone="!shouldShowSharedAlbums && !albumsStore.smartAlbums.length && !displayAlbums.length"
+									:selected-albums="selectedAlbumsIds"
+									@clicked="albumSelect"
+									@contexted="contextMenuAlbumOpen"
+								/>
+							</template>
+							<AlbumRootPanelVirtual
+								scope="own"
+								header="gallery.albums"
+								:selected-albums="selectedAlbumsIds"
+								@clicked="albumSelect"
+								@selected="albumSelect"
+								@contexted="contextMenuAlbumOpen"
+							/>
+							<AlbumRootPanelVirtual
+								v-if="shouldShowSharedAlbums"
+								scope="shared"
+								:selected-albums="selectedAlbumsIds"
+								@clicked="albumSelect"
+								@selected="albumSelect"
+								@contexted="contextMenuAlbumOpen"
+							/>
+						</template>
+						<!-- </div> -->
+					</div>
+				</UContextMenu>
+				<GalleryFooter v-once context="gallery" />
+			</div>
+		</div>
+	</UMain>
+	<!-- Dialogs for albums -->
+	<MoveDialog
+		v-model:open="is_move_visible"
+		:album="selectedAlbum"
+		:album-ids="selectedAlbumsIds"
+		@moved="
+			() => {
+				unselect();
+				refresh();
+			}
+		"
+	/>
+	<AlbumMergeDialog
+		v-model:open="is_merge_album_visible"
+		:album="selectedAlbum"
+		:album-ids="selectedAlbumsIds"
+		@merged="
+			() => {
+				unselect();
+				refresh();
+			}
+		"
+	/>
+	<DeleteDialog
+		v-model:open="is_delete_visible"
+		:album="selectedAlbum"
+		:album-ids="selectedAlbumsIds"
+		@deleted="
+			() => {
+				unselect();
+				refresh();
+			}
+		"
+	/>
+	<RenameDialog
+		v-if="selectedAlbum"
+		v-model:open="is_rename_visible"
+		:album="selectedAlbum"
+		@updated="
+			() => {
+				unselect();
+				refresh();
+			}
+		"
+	/>
+	<DownloadAlbum v-model:open="is_download_album_visible" :album-ids="downloadAlbumIds" />
+</template>
+<script setup lang="ts">
+import AlbumThumbPanel from "@/v8/components/gallery/albumModule/AlbumThumbPanel.vue";
+import AlbumRootPanelVirtual from "@/v8/components/gallery/albumModule/Virtualized/AlbumRootPanelVirtual.vue";
+import { useUserStore } from "@/stores/UserState";
+import { computed, ref, onMounted, onUnmounted } from "vue";
+import AlbumsHeader from "@/v8/components/headers/AlbumsHeader.vue";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+import { storeToRefs } from "pinia";
+import KeybindingsHelp from "@/v8/components/modals/KeybindingsHelp.vue";
+import { useSelection } from "@/composables/selections/selections";
+import { useContextMenu } from "@/v8/composables/contextMenus/contextMenu";
+import MoveDialog from "@/v8/components/forms/gallery-dialogs/MoveDialog.vue";
+import AlbumMergeDialog from "@/v8/components/forms/gallery-dialogs/AlbumMergeDialog.vue";
+import DeleteDialog from "@/v8/components/forms/gallery-dialogs/DeleteDialog.vue";
+import RenameDialog from "@/v8/components/forms/gallery-dialogs/RenameDialog.vue";
+import { useGalleryModals } from "@/composables/modalsTriggers/galleryModals";
+import AlbumService from "@/services/album-service";
+import { useMouseEvents } from "@/v8/composables/album/uploadEvents";
+import GalleryFooter from "@/v8/components/footers/GalleryFooter.vue";
+import { useTogglablesStateStore } from "@/stores/ModalsState";
+import UploadPanel from "@/v8/components/modals/UploadPanel.vue";
+import CameraCapture from "@/v8/components/modals/CameraCapture.vue";
+import AlbumCreateDialog from "@/v8/components/forms/album/AlbumCreateDialog.vue";
+import AlbumCreateTagDialog from "@/v8/components/forms/album/AlbumCreateTagDialog.vue";
+import AlbumCreatePersonDialog from "@/v8/components/forms/album/AlbumCreatePersonDialog.vue";
+import { useScrollable } from "@/composables/album/scrollable";
+import { EmptyPhotoCallbacks } from "@/utils/Helpers";
+import WebauthnModal from "@/v8/components/modals/WebauthnModal.vue";
+import LoginModal from "@/v8/components/modals/LoginModal.vue";
+import SecurityAdvisoriesModal from "@/v8/components/modals/SecurityAdvisoriesModal.vue";
+import { useAdvisoryModal } from "@/composables/modals/useAdvisoryModal";
+import LoadingProgress from "@/v8/components/loading/LoadingProgress.vue";
+import LiveMetrics from "@/v8/components/drawers/LiveMetrics.vue";
+import { useLeftMenuStateStore } from "@/stores/LeftMenuState";
+import { useRouter } from "vue-router";
+import SelectDrag from "@/v8/components/forms/album/SelectDrag.vue";
+import ImportFromLink from "@/v8/components/modals/ImportFromLink.vue";
+import DropBox from "@/v8/components/modals/DropBox.vue";
+import ImportFromServer from "@/v8/components/modals/ImportFromServer.vue";
+import { useAlbumsStore } from "@/stores/AlbumsState";
+import { useAlbumListStore } from "@/stores/AlbumListState";
+import { useAlbumStore } from "@/stores/AlbumState";
+import AlbumNavPanel from "@/v8/components/gallery/albumModule/AlbumNavPanel.vue";
+import { usePhotoStore } from "@/stores/PhotoState";
+import { usePhotosStore } from "@/stores/PhotosState";
+import { useOrderManagementStore } from "@/stores/OrderManagement";
+import DownloadAlbum from "@/v8/components/modals/DownloadAlbum.vue";
+import { trans } from "laravel-vue-i18n";
+import type { ContextMenuItem, TabsItem } from "@nuxt/ui";
+import { definePanelShortcuts } from "@/v8/composables/usePanelShortcuts";
+import { useLtRorRtL } from "@/utils/Helpers";
+import ResetDir from "@/v8/components/ResetDir.vue";
+
+const { flippedDir } = useLtRorRtL();
+const userStore = useUserStore();
+const lycheeStore = useLycheeStateStore();
+const togglableStore = useTogglablesStateStore();
+const leftMenuStore = useLeftMenuStateStore();
+const albumsStore = useAlbumsStore();
+const albumListStore = useAlbumListStore();
+const albumStore = useAlbumStore();
+const photosStore = usePhotosStore();
+const photoStore = usePhotoStore();
+const router = useRouter();
+const orderManagementStore = useOrderManagementStore();
+const { advisories, isAdvisoriesVisible, advisoryCheck, advisoryDismiss } = useAdvisoryModal();
+
+// Reset!
+albumStore.reset();
+albumsStore.reset();
+photosStore.reset();
+photoStore.reset();
+
+async function load() {
+	await Promise.allSettled([lycheeStore.load(), userStore.refresh()]);
+	AlbumService.clearAlbums();
+	albumsStore.load(router);
+	orderManagementStore.refresh();
+}
+
+async function refresh() {
+	await load();
+	albumListStore.invalidate();
+}
+
+async function onLoggedIn() {
+	await Promise.allSettled([lycheeStore.load(), userStore.refresh()]);
+	albumsStore.load(router);
+	orderManagementStore.refresh();
+	advisoryCheck();
+}
+
+const albumId = ref("gallery");
+
+const { onScroll, setScroll } = useScrollable(togglableStore, albumId);
+const {
+	is_login_open,
+	is_upload_visible,
+	list_upload_files,
+	upload_config,
+	is_webauthn_open,
+	is_import_from_server_open,
+	is_keybindings_help_open,
+	is_download_album_visible,
+} = storeToRefs(togglableStore);
+const { are_nsfw_visible, title } = storeToRefs(lycheeStore);
+
+const { selectedAlbum, selectedAlbums, selectedAlbumsIds, albumSelect, selectEverything, unselect, hasSelection } = useSelection(
+	photosStore,
+	albumsStore,
+	togglableStore,
+);
+
+// Modals for Albums
+const {
+	is_delete_visible,
+	toggleDelete,
+	is_merge_album_visible,
+	toggleMergeAlbum,
+	is_move_visible,
+	toggleMove,
+	is_rename_visible,
+	toggleRename,
+	is_import_from_link_open,
+	is_import_from_dropbox_open,
+} = useGalleryModals(togglableStore);
+
+function togglePin() {
+	if (!selectedAlbum.value) return;
+
+	AlbumService.setPinned(selectedAlbum.value.id, !selectedAlbum.value.is_pinned).then(() => {
+		AlbumService.clearAlbums();
+		refresh();
+		unselect();
+	});
+}
+
+const downloadAlbumIds = ref<string[]>([]);
+
+const albumCallbacks = {
+	setAsCover: () => {},
+	toggleRename: toggleRename,
+	toggleMerge: toggleMergeAlbum,
+	toggleMove: toggleMove,
+	togglePin: togglePin,
+	toggleDelete: toggleDelete,
+	toggleDownload: () => {
+		downloadAlbumIds.value = selectedAlbumsIds.value;
+		is_download_album_visible.value = true;
+	},
+	toggleApplyRenamer: () => {},
+	toggleScanFaces: () => {},
+};
+
+const { Menu } = useContextMenu(
+	{
+		selectedAlbum: selectedAlbum,
+		selectedAlbums: selectedAlbums,
+		selectedAlbumsIds: selectedAlbumsIds,
+	},
+	EmptyPhotoCallbacks,
+	albumCallbacks,
+);
+
+// See AlbumPanel.vue for why the composable's imperative albumMenuOpen is bypassed in favor of
+// a declarative UContextMenu wrapping the gallery view, and why `:disabled` above must not
+// depend on `Menu.length` (that races against the selection side-effect this handler
+// performs on the very same contextmenu event).
+function contextMenuAlbumOpen(_e: MouseEvent, albumId: string): void {
+	if (!selectedAlbumsIds.value.includes(albumId)) {
+		selectedAlbumsIds.value = [albumId];
+	}
+}
+
+const menuSections = computed<ContextMenuItem[][]>(() => {
+	const sections: ContextMenuItem[][] = [[]];
+	for (const entry of Menu.value) {
+		if (entry.is_divider) {
+			sections.push([]);
+			continue;
+		}
+		sections[sections.length - 1].push({
+			label: trans(entry.label ?? ""),
+			icon: entry.icon,
+			onSelect: entry.callback,
+		});
+	}
+	return sections.filter((s) => s.length > 0);
+});
+
+definePanelShortcuts(
+	{
+		h: () => (are_nsfw_visible.value = !are_nsfw_visible.value),
+		f: () => togglableStore.toggleFullScreen(),
+		" ": () => unselect(),
+		m: () => albumsStore.rootRights?.can_edit && hasSelection() && toggleMove(),
+		delete: () => albumsStore.rootRights?.can_edit && hasSelection() && toggleDelete(),
+		backspace: () => albumsStore.rootRights?.can_edit && hasSelection() && toggleDelete(),
+		meta_a: () => {
+			selectEverything();
+		},
+		l: () => !userStore.isLoggedIn && (is_login_open.value = true),
+		k: () => !userStore.isLoggedIn && (is_webauthn_open.value = true),
+	},
+	{ extraModalOpen: isAdvisoriesVisible },
+);
+
+const can_upload = computed(() => albumsStore.rootRights?.can_upload === true);
+const root_parent_id = ref<string | null>(null);
+const root_existing_albums = computed(() => albumsStore.albums.map((a) => ({ id: a.id, title: a.title })));
+
+// Shared albums visibility mode handling
+const sharedAlbumsVisibilityMode = computed(() => albumsStore.rootConfig?.shared_albums_visibility_mode ?? "show");
+
+// Active tab for tabbed view
+const activeTab = ref<string>("my-albums");
+
+const tabItems = computed<TabsItem[]>(() => [
+	{ label: trans("gallery.tabs.my_albums"), value: "my-albums", slot: "my-albums" },
+	{ label: trans("gallery.tabs.shared_with_me"), value: "shared", slot: "shared" },
+]);
+
+// Always display owned albums (no merging)
+const displayAlbums = computed(() => {
+	return albumsStore.albums;
+});
+
+// Whether there are shared albums to show, respecting visibility mode. Shared
+// root data lands in `sharedAlbumsV3` (see `AlbumsState.ts`'s `load()`); guests
+// only ever have a "shared" scope, never "own", so without it they would see an
+// empty root page. "separate_shared_only" keeps only directly shared albums
+// (not public albums owned by others).
+const hasSharedAlbums = computed(() => {
+	if (sharedAlbumsVisibilityMode.value === "hide") {
+		return false;
+	}
+	if (sharedAlbumsVisibilityMode.value === "separate_shared_only") {
+		return albumsStore.sharedAlbumsV3.some((album) => !album.is_public);
+	}
+	return albumsStore.sharedAlbumsV3.length > 0;
+});
+
+// Check if we should show shared albums section (for inline mode)
+const shouldShowSharedAlbums = computed(() => hasSharedAlbums.value);
+
+// A virtual album panel (smart, tag, person) hides its header only when no other panel is visible (FR-098-07).
+const isVirtualPanelAlone = computed(
+	() =>
+		albumsStore.virtualPanelCount === 1 &&
+		albumsStore.albums.length === 0 &&
+		albumsStore.pinnedAlbums.length === 0 &&
+		!shouldShowSharedAlbums.value,
+);
+
+// Check if we should show tabs (SEPARATE or SEPARATE_SHARED_ONLY mode with shared albums)
+const shouldShowTabs = computed(() => {
+	const mode = sharedAlbumsVisibilityMode.value;
+	const isSeparateMode = mode === "separate" || mode === "separate_shared_only";
+	return isSeparateMode && hasSharedAlbums.value;
+});
+
+const { onPaste, dragEnd, dropUpload } = useMouseEvents(
+	can_upload,
+	is_upload_visible,
+	list_upload_files,
+	root_parent_id,
+	root_existing_albums,
+	upload_config,
+);
+
+onMounted(() => {
+	togglableStore.loadUploadConfig();
+	window.addEventListener("paste", onPaste);
+	window.addEventListener("dragover", dragEnd);
+	window.addEventListener("drop", dropUpload);
+	leftMenuStore.left_menu_open = false;
+});
+
+onMounted(async () => {
+	await load();
+	setScroll();
+});
+
+onUnmounted(() => {
+	window.removeEventListener("paste", onPaste);
+	window.removeEventListener("dragover", dragEnd);
+	window.removeEventListener("drop", dropUpload);
+});
+</script>

@@ -1,0 +1,124 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Http\Requests\Face;
+
+use App\Contracts\Models\AbstractAlbum;
+use App\Http\Requests\BaseApiRequest;
+use App\Http\Requests\Traits\Authorize\AuthorizePhotosBelongToAlbumTrait;
+use App\Models\Album;
+use App\Models\Photo;
+use App\Policies\AlbumPolicy;
+use App\Policies\PhotoPolicy;
+use App\Rules\RandomIDRule;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Validator;
+
+/**
+ * Request for triggering face detection on specific photos or an album.
+ *
+ * POST /api/v2/FaceDetection/scan
+ */
+class ScanPhotosRequest extends BaseApiRequest
+{
+	use AuthorizePhotosBelongToAlbumTrait;
+
+	private ?array $photo_ids = null;
+	private ?Album $album = null;
+	private bool $force = false;
+
+	/**
+	 * {@inheritDoc}
+	 *
+	 * An album-wide scan is authorized against that album only. As soon as
+	 * explicit `photo_ids` are given, every one of them is authorized
+	 * individually; a supplied `album_id` then only narrows the selection down
+	 * and never replaces those per-photo checks (see GHSA-x6f7-qp5q-w37f).
+	 */
+	public function authorize(): bool
+	{
+		if ($this->photo_ids === null || count($this->photo_ids) === 0) {
+			return $this->album !== null &&
+				Gate::check(AlbumPolicy::CAN_TRIGGER_SCAN_ON_ALBUM, [AbstractAlbum::class, $this->album]);
+		}
+
+		// Per-photo check: deny if any photo fails the gate.
+		$photos = Photo::with('albums')->whereIn('id', $this->photo_ids)->get();
+		if ($photos->count() === 0) {
+			return false;
+		}
+
+		foreach ($photos as $photo) {
+			if (!Gate::check(PhotoPolicy::CAN_TRIGGER_SCAN_ON_PHOTO, $photo)) {
+				return false;
+			}
+		}
+
+		if ($this->album === null) {
+			return true;
+		}
+
+		return Gate::check(AlbumPolicy::CAN_TRIGGER_SCAN_ON_ALBUM, [AbstractAlbum::class, $this->album]) &&
+			$this->allPhotosBelongToAlbum($photos, $this->album->id);
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function rules(): array
+	{
+		return [
+			'photo_ids' => 'nullable|array',
+			'photo_ids.*' => ['string', new RandomIDRule(false)],
+			'album_id' => ['nullable', new RandomIDRule(true)],
+			'force' => 'sometimes|boolean',
+		];
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function withValidator(Validator $validator): void
+	{
+		$validator->after(function (Validator $validator): void {
+			$values = $validator->validated();
+			if (($values['photo_ids'] ?? null) === null && ($values['album_id'] ?? null) === null) {
+				$validator->errors()->add('photo_ids', 'Either photo_ids or album_id must be provided.');
+			}
+		});
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	protected function processValidatedValues(array $values, array $files): void
+	{
+		$this->photo_ids = $values['photo_ids'] ?? null;
+		$album_id = $values['album_id'] ?? null;
+		$this->album = $album_id !== null ? Album::findOrFail($album_id) : null;
+		$this->force = isset($values['force']) && static::toBoolean($values['force']);
+	}
+
+	/**
+	 * @return string[]|null
+	 */
+	public function photoIds(): ?array
+	{
+		return $this->photo_ids;
+	}
+
+	public function album(): ?Album
+	{
+		return $this->album;
+	}
+
+	public function force(): bool
+	{
+		return $this->force;
+	}
+}

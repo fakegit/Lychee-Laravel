@@ -1,0 +1,187 @@
+<template>
+	<UModal
+		v-model:open="open"
+		:dismissible="true"
+		:ui="{ content: 'max-w-xl lg:max-w-3xl xl:max-w-7xl' }"
+		:close="{
+			color: 'neutral',
+			variant: 'soft',
+			class: 'rounded-full',
+		}"
+		:title="$t('dialogs.keybindings.header')"
+	>
+		<template #body>
+			<div class="flex flex-wrap gap-4 justify-center align-top">
+				<UTable
+					v-for="(list, idx) in visibleShortcuts"
+					:key="`list-${idx}`"
+					:data="list.shortcuts"
+					:columns="columns"
+					class="w-full"
+					:class="props.only === undefined ? 'max-w-2xs' : 'max-w-xl'"
+					:ui="{ thead: 'hidden', td: 'px-2 py-1' }"
+				>
+					<template #key-cell="{ row }">
+						<div class="ltr:text-right rtl:text-left">
+							<UKbd
+								v-for="k in (row.original.key as string).split(' ')"
+								:key="`key-${idx}-${k}`"
+								variant="subtle"
+								class="ml-2"
+								:value="k"
+							/>
+						</div>
+					</template>
+				</UTable>
+				<div v-if="props.only === undefined" class="w-full flex flex-col justify-center items-center gap-2">
+					<UCheckbox v-model="doNotShowAgain" :ui="{ label: 'text-muted' }" :label="trans('dialogs.keybindings.don_t_show_again')" />
+					<UCheckbox v-model="hideHeaderButton" :ui="{ label: 'text-muted' }" :label="trans('dialogs.keybindings.hide_header_button')" />
+				</div>
+			</div>
+		</template>
+		<template #footer>
+			<UButton color="neutral" variant="soft" class="w-full justify-center font-bold" @click="closeCallback">
+				{{ $t("dialogs.button.close") }}
+			</UButton>
+		</template>
+	</UModal>
+</template>
+<script setup lang="ts">
+import SettingsService from "@/services/settings-service";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+import { computed, ref } from "vue";
+import { useAppToast } from "@/v8/composables/useAppToast";
+import { trans } from "laravel-vue-i18n";
+import type { TableColumn } from "@nuxt/ui";
+
+const open = defineModel<boolean>("open", { default: false });
+
+/** Show a single section (e.g. `quick_naming` from the face quick naming view, Feature 093). */
+const props = defineProps<{ only?: string }>();
+
+const toast = useAppToast();
+const doNotShowAgain = ref(false);
+const hideHeaderButton = ref(false);
+const LycheeState = useLycheeStateStore();
+
+const columns: TableColumn<{ action: string; key: string }>[] = [{ accessorKey: "action" }, { accessorKey: "key" }];
+
+function closeCallback() {
+	LycheeState.show_keybinding_help_popup = false;
+	open.value = false;
+
+	if (hideHeaderButton.value) {
+		SettingsService.setConfigs({
+			configs: [
+				{
+					key: "show_keybinding_help_button",
+					value: "0",
+				},
+			],
+		}).then(() => {
+			toast.add({
+				severity: "success",
+				summary: trans("dialogs.keybindings.button_hidden"),
+				life: 2000,
+			});
+		});
+	}
+
+	if (doNotShowAgain.value) {
+		SettingsService.setConfigs({
+			configs: [
+				{
+					key: "show_keybinding_help_popup",
+					value: "0",
+				},
+			],
+		}).then(() => {
+			toast.add({
+				severity: "success",
+				summary: trans("dialogs.keybindings.keep_hidden"),
+				life: 2000,
+			});
+		});
+	}
+}
+const shortcutsList = ref([
+	{
+		id: "site",
+		header: trans("dialogs.keybindings.side_wide"),
+		shortcuts: [
+			{ action: trans("dialogs.keybindings.back_cancel"), key: "Esc" },
+			{ action: trans("dialogs.keybindings.confirm"), key: "Enter" },
+			{ action: trans("dialogs.keybindings.login"), key: "l" },
+			{ action: trans("dialogs.keybindings.toggle_full_screen"), key: "f" },
+			{ action: trans("dialogs.keybindings.toggle_sensitive_albums"), key: "h" },
+		],
+	},
+	{
+		id: "albums",
+		header: trans("dialogs.keybindings.albums"),
+		shortcuts: [
+			{ action: trans("dialogs.keybindings.new_album"), key: "n" },
+			{ action: trans("dialogs.keybindings.upload_photos"), key: "u" },
+			{ action: trans("dialogs.keybindings.search"), key: "/" },
+			{ action: trans("dialogs.keybindings.show_this_modal"), key: "?" },
+			{ action: trans("dialogs.keybindings.select_all"), key: "meta a" },
+			{ action: trans("dialogs.keybindings.move_selection"), key: "m" },
+			{ action: trans("dialogs.keybindings.delete_selection"), key: "BckSpace" },
+		],
+	},
+	{
+		id: "album",
+		header: trans("dialogs.keybindings.album"),
+		shortcuts: [
+			{ action: trans("dialogs.keybindings.new_album"), key: "n" },
+			{ action: trans("dialogs.keybindings.upload_photos"), key: "u" },
+			{ action: trans("dialogs.keybindings.search"), key: "/" },
+			{ action: trans("dialogs.keybindings.slideshow"), key: "Space" },
+			{ action: trans("dialogs.keybindings.select_all"), key: "meta a" },
+			{ action: trans("dialogs.keybindings.move_selection"), key: "m" },
+			{ action: trans("dialogs.keybindings.delete_selection"), key: "BckSpace" },
+			{ action: trans("dialogs.keybindings.toggle"), key: "i" },
+			{ action: trans("dialogs.keybindings.toggle_date_scrubber"), key: "d" },
+		],
+	},
+	{
+		id: "photo",
+		header: trans("dialogs.keybindings.photo"),
+		shortcuts: [
+			{ action: trans("dialogs.keybindings.previous"), key: "←" },
+			{ action: trans("dialogs.keybindings.next"), key: "→" },
+			{ action: trans("dialogs.keybindings.cycle"), key: "o" },
+			{ action: trans("dialogs.keybindings.slideshow"), key: "Space" },
+			{ action: trans("dialogs.keybindings.star"), key: "s" },
+			{ action: trans("dialogs.keybindings.move"), key: "m" },
+			{ action: trans("dialogs.keybindings.delete"), key: "BckSpace" },
+			{ action: trans("dialogs.keybindings.edit"), key: "e" },
+			{ action: trans("dialogs.keybindings.show_hide_meta"), key: "i" },
+			{ action: trans("dialogs.keybindings.toggle_face_overlay"), key: "p" },
+			{ action: trans("dialogs.keybindings.toggle_sphere"), key: "v" },
+		],
+	},
+	{
+		id: "quick_naming",
+		header: trans("dialogs.keybindings.quick_naming"),
+		shortcuts: [
+			{ action: trans("dialogs.keybindings.qn_name"), key: "Enter" },
+			{ action: trans("dialogs.keybindings.qn_new_person"), key: "shift Enter" },
+			{ action: trans("dialogs.keybindings.qn_move_highlight"), key: "↑ ↓" },
+			{ action: trans("dialogs.keybindings.qn_skip"), key: "→" },
+			{ action: trans("dialogs.keybindings.qn_back"), key: "←" },
+			{ action: trans("dialogs.keybindings.qn_clear"), key: "BckSpace" },
+			{ action: trans("dialogs.keybindings.qn_discard"), key: "BckSpace Space" },
+			{ action: trans("dialogs.keybindings.qn_leave"), key: "Esc" },
+		],
+	},
+]);
+
+const visibleShortcuts = computed(() =>
+	props.only === undefined ? shortcutsList.value.filter((l) => l.id !== "quick_naming") : shortcutsList.value.filter((l) => l.id === props.only),
+);
+
+defineShortcuts({
+	"?": () => (open.value = true),
+});
+</script>

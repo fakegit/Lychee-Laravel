@@ -1,0 +1,240 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\View\Components;
+
+use App\Assets\Features;
+use App\Constants\FileSystem;
+use App\Contracts\Models\AbstractAlbum;
+use App\Enum\OgImageAlbumSourceType;
+use App\Enum\SizeVariantType;
+use App\Exceptions\ConfigurationKeyMissingException;
+use App\Http\Resources\Traits\HasHeaderUrl;
+use App\Models\Album;
+use App\Models\Extensions\BaseAlbum;
+use App\Models\Photo;
+use App\Models\SizeVariant;
+use App\Services\GalleryLockState;
+use Illuminate\Contracts\Container\BindingResolutionException;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\View\Component;
+use Illuminate\View\View;
+use LycheeVerify\Verify;
+
+/**
+ * This is the bottom of the page.
+ * We provides socials etc...
+ */
+class Meta extends Component
+{
+	use HasHeaderUrl;
+
+	public string $page_title;
+	public string $page_description;
+	public string $site_owner;
+	public string $image_url;
+	public string $page_url;
+	public string $base_url;
+	public bool $rss_enable;
+	public string $user_css_url;
+	public string $user_js_url;
+	public string $loading_indicator_mode;
+	public string $loading_indicator_url;
+	public bool $client_cache_enabled;
+	public int $width = 0;
+	public int $height = 0;
+
+	private bool $access = true;
+	private ?AbstractAlbum $album = null;
+	private ?Photo $photo = null;
+
+	/**
+	 * Initialize the footer once for all.
+	 *
+	 * @throws ConfigurationKeyMissingException
+	 */
+	public function __construct()
+	{
+		// default data
+		$this->site_owner = request()->configs()->getValueAsString('site_owner');
+		$this->page_url = url()->current();
+		$this->rss_enable = resolve(GalleryLockState::class)->isRssEnabled();
+		$this->user_css_url = self::getUserCustomFiles('user.css');
+		$this->user_js_url = self::getUserCustomFiles('custom.js');
+		$this->setLoadingIndicator();
+		// Rendered into the page so the front end knows it before its first request.
+		$this->client_cache_enabled = config('features.client-cache') === true;
+
+		$base_url = url('/');
+		// Work around to try to satisfy everyone...
+		// If APP_DIR is set and the url() already contains it, we do not append it a second time.
+		if (str_ends_with($base_url, config('app.dir_url'))) {
+			$this->base_url = $base_url;
+		} else {
+			$this->base_url = url(config('app.dir_url') . '/');
+		}
+
+		$this->page_title = request()->configs()->getValueAsString('site_title');
+		$this->page_description = '';
+
+		$sm_card_image_url = request()->configs()->getValueAsString('sm_card_image_url');
+		$sm_card_image_url = $sm_card_image_url !== '' ? $sm_card_image_url : request()->configs()->getValueAsString('landing_background_landscape');
+		$this->image_url = $this->resolveSmCardImageUrl($sm_card_image_url);
+
+		// processing photo and album data
+		if (session()->has('access')) {
+			$this->access = session()->get('access');
+			session()->forget('access');
+		}
+		if (session()->has('album')) {
+			$this->album = session()->get('album');
+			session()->forget('album');
+		}
+		if (session()->has('photo')) {
+			$this->photo = session()->get('photo');
+			session()->forget('photo');
+		}
+
+		if ($this->access === false) {
+			return;
+		}
+
+		if ($this->album !== null) {
+			$this->page_title = $this->album->get_title();
+			if ($this->album instanceof BaseAlbum) {
+				$this->page_description = $this->album->description ?? request()->configs()->getValueAsString('site_title');
+			}
+			$size_variant = $this->getAlbumOgImageUrl($this->album);
+			if ($size_variant !== null) {
+				$this->image_url = $size_variant->url;
+				$this->width = $size_variant->width;
+				$this->height = $size_variant->height;
+			}
+		}
+
+		if ($this->photo !== null) {
+			$this->page_title = $this->photo->title;
+			$this->page_description = $this->photo->description ?? request()->configs()->getValueAsString('site_title');
+			$size_variant = $this->photo->size_variants->getMedium() ?? $this->photo->size_variants->getSmall2x() ?? $this->photo->size_variants->getSmall();
+			$this->image_url = $size_variant->url ?? $this->image_url;
+			$this->width = $size_variant->width ?? 0;
+			$this->height = $size_variant->height ?? 0;
+		}
+	}
+
+	/**
+	 * Render component.
+	 *
+	 * @throws BindingResolutionException
+	 */
+	public function render(): View
+	{
+		return view('components.meta');
+	}
+
+	/**
+	 * Loading indicator of the v8 front-end, rendered into the page so the first loader already uses it.
+	 */
+	private function setLoadingIndicator(): void
+	{
+		$verify = request()->verify();
+		$is_se_enabled = $verify instanceof Verify && $verify->validate() && $verify->is_supporter();
+		$url = trim((string) config('features.loading_indicator_url'));
+
+		// A custom animation wins over white label; both require Supporter Edition.
+		$this->loading_indicator_mode = match (true) {
+			$is_se_enabled && $url !== '' => 'custom',
+			$is_se_enabled && Features::active('white_label_enabled') => 'unbranded',
+			default => 'default',
+		};
+		$this->loading_indicator_url = $this->loading_indicator_mode === 'custom' ? $url : '';
+	}
+
+	/**
+	 * Returns user.css url with cache busting if file has been updated.
+	 */
+	public static function getUserCustomFiles(string $file_name): string
+	{
+		$css_cache_busting = '';
+		/** @disregard P1013 */
+		if (Storage::disk(FileSystem::DIST)->fileExists($file_name)) {
+			$css_cache_busting = '?' . Storage::disk(FileSystem::DIST)->lastModified($file_name);
+		}
+
+		/** @disregard P1013 */
+		return Storage::disk(FileSystem::DIST)->url($file_name) . $css_cache_busting;
+	}
+
+	/**
+	 * Returns the image used for integration in social medias.
+	 *
+	 * @param AbstractAlbum $album
+	 *
+	 * @return SizeVariant|null
+	 */
+	private function getAlbumOgImageUrl(AbstractAlbum $album): ?SizeVariant
+	{
+		$source = request()->configs()->getValueAsEnum('sm_card_album_source', OgImageAlbumSourceType::class);
+
+		if ($source === OgImageAlbumSourceType::COVER) {
+			return $this->getCoverUrl($album);
+		}
+
+		return $this->getHeaderUrl($album);
+	}
+
+	/**
+	 * Return cover url if exists.
+	 *
+	 * @param AbstractAlbum $album
+	 *
+	 * @return SizeVariant|null
+	 */
+	private function getCoverUrl(AbstractAlbum $album): ?SizeVariant
+	{
+		if (!$album instanceof Album) {
+			return null;
+		}
+
+		$cover_id = $album->cover_id ?? $album->auto_cover_id_least_privilege;
+		if ($cover_id === null) {
+			return null;
+		}
+
+		return SizeVariant::query()
+			->where('photo_id', '=', $cover_id)
+			->whereIn('type', [SizeVariantType::MEDIUM2X, SizeVariantType::MEDIUM, SizeVariantType::SMALL2X, SizeVariantType::SMALL])
+			->orderBy('type', 'asc')
+			->first();
+	}
+
+	/**
+	 * Return the image url if exists.
+	 *
+	 * @param string $value
+	 *
+	 * @return string
+	 */
+	private function resolveSmCardImageUrl(string $value): string
+	{
+		if (str_contains($value, '://') || str_starts_with($value, '/')) {
+			return $value;
+		}
+
+		$photo = Photo::query()->with(['size_variants'])->find($value);
+		if ($photo === null) {
+			return $value;
+		}
+
+		return $photo->size_variants->getMedium2x()?->url
+			?? $photo->size_variants->getMedium()?->url
+			?? $photo->size_variants->getSmall2x()?->url
+			?? $photo->size_variants->getSmall()?->url
+			?? $value;
+	}
+}

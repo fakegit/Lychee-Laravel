@@ -1,0 +1,485 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Image\Handlers;
+
+use App\Contracts\Image\ImageHandlerInterface;
+use App\Contracts\Image\MediaFile;
+use App\Contracts\Image\StreamStats;
+use App\DTO\ImageDimension;
+use App\Enum\SizeVariantFormat;
+use App\Exceptions\ImageProcessingException;
+use App\Exceptions\MediaFileOperationException;
+use App\Exceptions\MediaFileUnsupportedException;
+use App\Facades\Helpers;
+use App\Image\Files\FlysystemFile;
+use App\Image\Files\InMemoryBuffer;
+use App\Image\Files\NativeLocalFile;
+use App\Repositories\ConfigManager;
+use App\Services\Image\FileExtensionService;
+use function Safe\fclose;
+use function Safe\filesize;
+use function Safe\fopen;
+use function Safe\fread;
+use function Safe\preg_match;
+use function Safe\rename;
+use function Safe\stream_copy_to_stream;
+use function Safe\tempnam;
+use function Safe\unlink;
+
+class ImagickHandler extends BaseImageHandler
+{
+	/**
+	 * Maximum accepted `/MediaBox` width or height, in PDF points (1/72 inch).
+	 *
+	 * Mirrors the `width`/`height` resource limits already configured in
+	 * ImageMagick's `policy.xml` (32,000 pixels). PDFs are rendered at the
+	 * default 72 DPI, so a MediaBox beyond this threshold is guaranteed to be
+	 * rejected by that policy anyway - but only after Ghostscript has already
+	 * spent tens of seconds to minutes of CPU time attempting to rasterize it.
+	 * Rejecting such files up front avoids that wasted cost.
+	 */
+	private const MAX_PDF_MEDIABOX_POINTS = 32000;
+
+	/**
+	 * Maximum plausible `/MediaBox` area (width x height, in sq. points) per byte of PDF file size.
+	 *
+	 * A hand-crafted, near-empty PDF can declare a huge page while weighing only a few
+	 * hundred bytes (e.g. 383 bytes for a 32000x32000pt page, a ratio of ~2,700,000
+	 * sq. pt/byte). Real single-page PDFs, even lean vector-only ones, sit in the tens
+	 * to low hundreds of sq. pt/byte (e.g. ~24 for a 20 KB Letter page, ~40 for a 200 KB
+	 * A0 poster). This threshold sits ~1,000x above that realistic range and ~50x below
+	 * the crafted PoC, so it catches implausibly large/empty pages even when their
+	 * dimensions individually stay under {@see MAX_PDF_MEDIABOX_POINTS}.
+	 */
+	private const MAX_MEDIABOX_AREA_PER_BYTE = 50_000;
+
+	/** Number of leading bytes scanned for a `/MediaBox` entry; ample for the first page object of any real-world PDF. */
+	private const MEDIABOX_SCAN_LIMIT = 1_048_576;
+
+	/** @var \Imagick|null the internal Imagick image */
+	private ?\Imagick $im_image = null;
+
+	public function __clone()
+	{
+		if ($this->im_image !== null) {
+			$this->im_image = clone $this->im_image;
+		}
+	}
+
+	/**
+	 * {@inheritdoc}
+	 */
+	public function reset(): void
+	{
+		$this->im_image?->clear();
+		$this->im_image = null;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	protected function supportsJxl(): bool
+	{
+		return resolve(ConfigManager::class)->hasJxl();
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function load(MediaFile $file): void
+	{
+		$this->assertCanProcess($file->getOriginalExtension());
+		try {
+			$this->reset();
+			$this->im_image = new \Imagick();
+
+			$file_extension_service = app(FileExtensionService::class);
+			$is_pdf = $file->getExtension() === '.pdf' && $file_extension_service->isSupportedOrAcceptedFileExtension($file->getExtension());
+
+			if ($is_pdf) {
+				$this->loadPdf($file);
+			} else {
+				$this->loadFromStream($file);
+			}
+
+			$this->autoRotate();
+		} catch (\ImagickException $e) {
+			throw new MediaFileOperationException('Failed to load image', $e);
+		} finally {
+			$file->close();
+		}
+	}
+
+	/**
+	 * Loads a PDF file into Imagick by passing a real filesystem path to Ghostscript.
+	 *
+	 * Ghostscript requires a seekable named path to resolve cross-reference tables
+	 * in modern PDFs. Remote files are copied to a named temp file first.
+	 */
+	private function loadPdf(MediaFile $file): void
+	{
+		// PDFs must be loaded via a real filesystem path rather than an anonymous stream.
+		//
+		// Imagick delegates PDF rendering to Ghostscript. When given a named file path
+		// ending in .pdf, Ghostscript opens and seeks through the file freely — which it
+		// needs to do to resolve cross-reference tables and compressed object streams that
+		// are common in modern PDFs.
+		//
+		// When given an anonymous PHP stream via readImageFile(), Ghostscript receives no
+		// filename or format hint, and cannot seek backwards. This causes silent "Page
+		// drawing error" failures for any PDF complex enough to require non-linear reading,
+		// regardless of file size.
+		$pdf_path = $this->getLocalPath($file);
+		$tmp_path = null;
+
+		try {
+			if ($pdf_path === null) {
+				// For remote/non-local files, stream the content into a named temp file
+				// so Ghostscript can open it by path.
+				//
+				// tempnam() atomically creates a placeholder file; we rename it to a
+				// .pdf path so Ghostscript recognises the format by extension. The outer
+				// try/finally guarantees the .pdf temp file is cleaned up even if fopen(),
+				// stream_copy_to_stream(), or readImage() throws.
+				$tmp_base = tempnam(Helpers::getTmpDir(), 'lychee_');
+				$tmp_path = $tmp_base . '.pdf';
+				rename($tmp_base, $tmp_path);
+				$pdf_path = $tmp_path;
+				$tmp_handle = fopen($tmp_path, 'wb');
+				try {
+					stream_copy_to_stream($file->read(), $tmp_handle);
+				} finally {
+					fclose($tmp_handle);
+				}
+			}
+
+			$this->assertPdfPageSizeIsSafe($pdf_path);
+
+			// The [0] suffix tells Imagick to read only the first page of the PDF,
+			// avoiding the overhead of rendering all pages just to generate a thumbnail.
+			$this->im_image->readImage($pdf_path . '[0]');
+		} finally {
+			if ($tmp_path !== null && is_file($tmp_path)) {
+				unlink($tmp_path);
+			}
+		}
+	}
+
+	/**
+	 * Rejects PDFs that declare a `/MediaBox` larger than we're willing to rasterize.
+	 *
+	 * A crafted PDF can declare an enormous page size while remaining tiny on disk
+	 * (a few hundred bytes). Ghostscript will still attempt to rasterize such a page
+	 * at full resolution before Imagick's own pixel-cache policy has a chance to
+	 * reject the result, burning CPU for tens of seconds to minutes per request for
+	 * no usable output. This check is a cheap, best-effort guard performed before
+	 * handing the file to Ghostscript; it does not replace the resource policy
+	 * itself, and legitimate PDFs without a plainly readable `/MediaBox` are passed
+	 * through unchanged.
+	 *
+	 * Every `/MediaBox` occurrence in the scanned window is checked, not just the
+	 * first: a crafted file could otherwise place a small, easily-matched decoy
+	 * `/MediaBox` (e.g. inside a PDF comment) ahead of the real, oversized one used
+	 * to render the first page.
+	 *
+	 * The number of occurrences inspected is bounded by the `pdf_mediabox_max_matches`
+	 * config (default 25) rather than a fixed constant: every occurrence is already
+	 * individually checked against {@see MAX_PDF_MEDIABOX_POINTS} and
+	 * {@see MAX_MEDIABOX_AREA_PER_BYTE}, so this cap only bounds the cost of the scan
+	 * loop itself, not the security property. Legitimate large scanned multi-page
+	 * documents can exceed a low default; see https://github.com/LycheeOrg/Lychee/discussions/4826.
+	 *
+	 * @throws MediaFileUnsupportedException
+	 */
+	private function assertPdfPageSizeIsSafe(string $pdf_path): void
+	{
+		$handle = fopen($pdf_path, 'rb');
+		try {
+			$head = fread($handle, self::MEDIABOX_SCAN_LIMIT);
+		} finally {
+			fclose($handle);
+		}
+
+		$max_matches = app(ConfigManager::class)->getValueAsInt('pdf_mediabox_max_matches');
+		$pattern = '/\/MediaBox\s*\[\s*(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)/';
+		$filesize = filesize($pdf_path);
+		$offset = 0;
+
+		for ($seen = 0; $seen < $max_matches; $seen++) {
+			if (preg_match($pattern, $head, $matches, PREG_OFFSET_CAPTURE, $offset) !== 1) {
+				return;
+			}
+
+			$width = abs((float) $matches[3][0] - (float) $matches[1][0]);
+			$height = abs((float) $matches[4][0] - (float) $matches[2][0]);
+
+			if ($width > self::MAX_PDF_MEDIABOX_POINTS || $height > self::MAX_PDF_MEDIABOX_POINTS) {
+				throw new MediaFileUnsupportedException(\sprintf('PDF page size (%dx%d pt) exceeds the maximum supported dimension of %d pt', $width, $height, self::MAX_PDF_MEDIABOX_POINTS));
+			}
+
+			$area_per_byte = ($width * $height) / $filesize;
+
+			if ($area_per_byte > self::MAX_MEDIABOX_AREA_PER_BYTE) {
+				throw new MediaFileUnsupportedException(\sprintf('PDF page size (%dx%d pt) is implausibly large for a %d byte file', $width, $height, $filesize));
+			}
+
+			// Resume scanning right after this match to find the next occurrence.
+			$offset = $matches[0][1] + \strlen($matches[0][0]);
+		}
+
+		throw new MediaFileUnsupportedException(\sprintf('PDF declares more than %d `/MediaBox` occurrences within the first %d bytes. If this is a legitimate large document, raise the \'pdf_mediabox_max_matches\' setting.', $max_matches, self::MEDIABOX_SCAN_LIMIT));
+	}
+
+	/**
+	 * Loads a non-PDF file into Imagick via a stream, buffering in memory if the stream
+	 * is not seekable.
+	 */
+	private function loadFromStream(MediaFile $file): void
+	{
+		$in_memory_buffer = null;
+		try {
+			$original_stream = $file->read();
+			if (stream_get_meta_data($original_stream)['seekable']) {
+				$input_stream = $original_stream;
+			} else {
+				// We make an in-memory copy of the provided stream,
+				// because we must be able to seek/rewind the stream.
+				// For example, a readable stream from a remote location (i.e.
+				// a "download" stream) is only forward readable once.
+				$in_memory_buffer = new InMemoryBuffer();
+				$in_memory_buffer->write($original_stream);
+				$input_stream = $in_memory_buffer->read();
+			}
+
+			$this->im_image->readImageFile($input_stream);
+		} finally {
+			$in_memory_buffer?->close();
+		}
+	}
+
+	/**
+	 * Returns the local filesystem path for the given file, or null if the file is remote.
+	 *
+	 * Used to obtain a real path for PDF files, which must be passed to Ghostscript
+	 * by path rather than via a stream.
+	 */
+	private function getLocalPath(MediaFile $file): ?string
+	{
+		if ($file instanceof NativeLocalFile) {
+			return $file->getPath();
+		}
+		if ($file instanceof FlysystemFile && $file->isLocalFile()) {
+			return $file->toLocalFile()->getPath();
+		}
+
+		// File is on a remote disk (e.g. S3); caller must copy it to a local temp file.
+		return null;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function save(MediaFile $file, bool $collect_statistics = false): ?StreamStats
+	{
+		if ($this->im_image === null) {
+			throw new MediaFileOperationException('No image loaded');
+		}
+		$this->assertCanProcess($file->getExtension());
+		try {
+			$format = strtolower(ltrim($file->getExtension(), '.'));
+			$this->im_image->setImageCompressionQuality($this->resolveQuality());
+			if ($format === SizeVariantFormat::WEBP->value && $this->isLossless()) {
+				$this->im_image->setOption('webp:lossless', 'true');
+			}
+			// The JPEG XL coder ignores the image compression quality and reads these options instead.
+			// `jxl:distance` takes precedence over `jxl:quality`; distance 0 is lossless.
+			if ($format === SizeVariantFormat::JXL->value && $this->isLossless()) {
+				$this->im_image->setOption('jxl:distance', '0');
+			} elseif ($format === SizeVariantFormat::JXL->value) {
+				$this->im_image->setOption('jxl:quality', (string) $this->resolveQuality());
+			}
+			$profiles = $this->im_image->getImageProfiles('icc', true);
+			// Remove metadata to save some bytes
+			$this->im_image->stripImage();
+			// Re-add  color profiles
+			if (array_key_exists('icc', $profiles)) {
+				$this->im_image->profileImage('icc', $profiles['icc']);
+			}
+
+			// We write the image into a memory buffer first, because
+			// we don't know if the file is a local file (or hosted elsewhere)
+			// and if the file supports seekable streams
+			$in_memory_buffer = new InMemoryBuffer();
+			$this->im_image->writeImageFile($in_memory_buffer->stream(), $format);
+			$stream_stat = $file->write($in_memory_buffer->read(), $collect_statistics);
+			$file->close();
+			$in_memory_buffer->close();
+
+			return $this->applyLosslessOptimizationConditionally($file, $collect_statistics) ?? $stream_stat;
+			// @codeCoverageIgnoreStart
+		} catch (\ImagickException $e) {
+			throw new MediaFileOperationException('Failed to save image', $e);
+		}
+		// @codeCoverageIgnoreEnd
+	}
+
+	/**
+	 * Rotates the image such that it is oriented in upright direction;.
+	 *
+	 * @return void
+	 *
+	 * @throws ImageProcessingException
+	 */
+	private function autoRotate(): void
+	{
+		try {
+			$orientation = $this->im_image->getImageOrientation();
+
+			$needs_flop = match ($orientation) {
+				\Imagick::ORIENTATION_TOPRIGHT, \Imagick::ORIENTATION_BOTTOMLEFT, \Imagick::ORIENTATION_LEFTTOP, \Imagick::ORIENTATION_RIGHTBOTTOM => true,
+				\Imagick::ORIENTATION_TOPLEFT, \Imagick::ORIENTATION_BOTTOMRIGHT, \Imagick::ORIENTATION_RIGHTTOP, \Imagick::ORIENTATION_LEFTBOTTOM, \Imagick::ORIENTATION_UNDEFINED => false,
+			};
+
+			$angle = match ($orientation) {
+				\Imagick::ORIENTATION_TOPLEFT, \Imagick::ORIENTATION_TOPRIGHT, \Imagick::ORIENTATION_UNDEFINED => 0,
+				\Imagick::ORIENTATION_BOTTOMRIGHT, \Imagick::ORIENTATION_BOTTOMLEFT => 180,
+				\Imagick::ORIENTATION_LEFTTOP, \Imagick::ORIENTATION_LEFTBOTTOM => -90,
+				\Imagick::ORIENTATION_RIGHTTOP, \Imagick::ORIENTATION_RIGHTBOTTOM => 90,
+			};
+
+			if ($needs_flop && !$this->im_image->flopImage()) {
+				throw new \ImagickException('Failed to flop image');
+			}
+
+			if ($angle !== 0 && !$this->im_image->rotateImage(new \ImagickPixel(), $angle)) {
+				throw new \ImagickException('Failed to rotate image');
+			}
+
+			if (!$this->im_image->setImageOrientation(\Imagick::ORIENTATION_TOPLEFT)) {
+				throw new \ImagickException('Failed to set orientation');
+			}
+		} catch (\ImagickException $exception) {
+			throw new ImageProcessingException('Failed to auto-rotate image', $exception);
+		}
+	}
+
+	/**
+	 * {@inheritdoc}
+	 */
+	public function cloneAndScale(ImageDimension $dst_dim): ImageHandlerInterface
+	{
+		try {
+			$clone = clone $this;
+			if (!$clone->im_image->scaleImage(
+				$dst_dim->width, $dst_dim->height, $dst_dim->width !== 0 && $dst_dim->height !== 0
+			)) {
+				throw new \ImagickException('Failed to scale image');
+			}
+
+			return $clone;
+			// @codeCoverageIgnoreStart
+		} catch (\ImagickException $e) {
+			throw new ImageProcessingException('Failed to scale image', $e);
+		}
+		// @codeCoverageIgnoreEnd
+	}
+
+	/**
+	 * {@inheritdoc}
+	 */
+	public function cloneAndCrop(ImageDimension $dst_dim): ImageHandlerInterface
+	{
+		try {
+			$clone = clone $this;
+			if (!$clone->im_image->cropThumbnailImage($dst_dim->width, $dst_dim->height)) {
+				throw new \ImagickException('Failed to crop image');
+			}
+
+			return $clone;
+			// @codeCoverageIgnoreStart
+		} catch (\ImagickException $e) {
+			throw new ImageProcessingException('Failed to crop image', $e);
+		}
+		// @codeCoverageIgnoreEnd
+	}
+
+	/**
+	 * {@inheritdoc}
+	 */
+	public function rotate(int $angle): ImageDimension
+	{
+		try {
+			if (!$this->im_image->rotateImage(new \ImagickPixel(), $angle)) {
+				throw new \ImagickException('Failed to rotate image');
+			}
+
+			return $this->getDimensions();
+		} catch (\ImagickException $e) {
+			throw new ImageProcessingException('Failed to rotate image', $e);
+		}
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function getDimensions(): ImageDimension
+	{
+		try {
+			return new ImageDimension(
+				$this->im_image->getImageWidth(),
+				$this->im_image->getImageHeight(),
+			);
+			// @codeCoverageIgnoreStart
+		} catch (\ImagickException $e) {
+			throw new ImageProcessingException('Could not determine dimensions of image', $e);
+		}
+		// @codeCoverageIgnoreEnd
+	}
+
+	public function isLoaded(): bool
+	{
+		return $this->im_image !== null;
+	}
+
+	public function cloneAndCompose(ImageHandlerInterface $watermark_handler, int $x, int $y): ImageHandlerInterface
+	{
+		if (!$watermark_handler instanceof ImagickHandler) {
+			throw new \InvalidArgumentException('Watermark handler must be an instance of ImagickHandler');
+		}
+
+		try {
+			$clone = clone $this;
+			$clone->im_image->compositeImage(
+				$watermark_handler->im_image,
+				\Imagick::COMPOSITE_OVER,
+				$x, $y
+			);
+
+			return $clone;
+			// @codeCoverageIgnoreStart
+		} catch (\ImagickException $e) {
+			throw new ImageProcessingException('Failed to compose image', $e);
+		}
+		// @codeCoverageIgnoreEnd
+	}
+
+	public function cloneAndChangeOpacity(float $opacity): ImageHandlerInterface
+	{
+		try {
+			$clone = clone $this;
+			$clone->im_image->evaluateImage(\Imagick::EVALUATE_MULTIPLY, $opacity, \Imagick::CHANNEL_ALPHA);
+
+			return $clone;
+			// @codeCoverageIgnoreStart
+		} catch (\ImagickException $e) {
+			throw new ImageProcessingException('Failed to change transparency of image', $e);
+		}
+		// @codeCoverageIgnoreEnd
+	}
+}

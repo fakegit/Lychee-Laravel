@@ -1,0 +1,178 @@
+import axios, { AxiosError, InternalAxiosRequestConfig, type AxiosResponse } from "axios";
+import CSRF from "./csrf-getter";
+import InitService from "../services/init-service";
+import { isClientCacheEnabled, setUpClientCache } from "./client-cache";
+
+// Cached for the life of the session (unlike InitService.fetchMac()'s in-flight dedup, which only
+// coalesces concurrent callers of one fetch): once resolved, later Asset requests reuse this value
+// with zero extra network round-trips or server-side recomputation. Invalidated by the response
+// interceptor below when it goes stale.
+// `cachedMac` and `macFetched` are tracked separately because the server legitimately returns an
+// empty string (not null) when the temporary-link feature is disabled - without a separate
+// "have we fetched" flag, that empty value would look identical to "not fetched yet" and Gallery::getMac
+// would be re-requested on every single Asset/ request instead of once per session.
+let cachedMac: string | null = null;
+let macFetched = false;
+
+declare module "axios" {
+	interface AxiosRequestConfig {
+		// Opt-in: retry this request up to N times (exponential backoff) when the server answers
+		// 409 because a server-side lock could not be acquired in time. Only set it on requests
+		// where a 409 guarantees nothing was written (e.g. album creation), so a retry is safe.
+		conflictRetries?: number;
+	}
+}
+
+// Marks a request that already went through the mac-invalidate-and-retry path below, so a
+// second 401 (e.g. the feature was disabled meanwhile) is reported instead of retried forever.
+// `__conflictAttempt` counts the 409 retries already performed for `conflictRetries`.
+interface MacRetryConfig extends InternalAxiosRequestConfig {
+	__macRetried?: boolean;
+	__conflictAttempt?: number;
+}
+
+const CONFLICT_RETRY_BASE_DELAY_MS = 500;
+
+/**
+ * Requests made with `responseType: "blob"` (thumb assets, zip/photo downloads) still get their
+ * error bodies parsed as a `Blob` by axios, even though the server actually sent a JSON error
+ * payload - so `error.response.data` is a `Blob`, not the `{ message }` object callers expect.
+ * Read it back out as text/JSON before anything tries to use it, otherwise a raw `Blob` ends up
+ * in the global `"error"` CustomEvent's `detail` and gets rendered as the literal string
+ * "[object Blob]" by Error.vue's `v-html` fallback.
+ */
+async function extractErrorData(data: unknown): Promise<{ message?: string } & Record<string, unknown>> {
+	if (typeof Blob !== "undefined" && data instanceof Blob) {
+		try {
+			const parsed: unknown = JSON.parse(await data.text());
+			if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+				return {};
+			}
+			return parsed as { message?: string };
+		} catch (_error) {
+			return {};
+		}
+	}
+	return (data ?? {}) as { message?: string };
+}
+
+/**
+ * Binary image routes needing the temporary-link signature: `Asset/...` (Feature 056)
+ * and the face-scoped photo `Faces/{id}/photo/{variant}` (Feature 093, ADR-093-01).
+ */
+function needsMac(url: string | undefined): boolean {
+	return url !== undefined && (url.includes("Asset/") || /Faces\/[^/]+\/photo\//.test(url));
+}
+
+const AxiosConfig = {
+	axiosSetUp() {
+		setUpClientCache(axios, isClientCacheEnabled());
+		axios.defaults.headers.common["X-Requested-With"] = "XMLHttpRequest";
+		axios.interceptors.request.use(
+			async function (config: InternalAxiosRequestConfig) {
+				try {
+					const token = CSRF.get();
+					config.headers["X-XSRF-TOKEN"] = token;
+				} catch (_error) {
+					// Cookie expired!
+					// const event = new CustomEvent("session_expired");
+					// window.dispatchEvent(event);
+					// We reject to ensure that the request is not even sent.
+					// return Promise.reject("session_expired");
+				}
+
+				if (needsMac(config.url)) {
+					if (!macFetched) {
+						const { data } = await InitService.fetchMac();
+						cachedMac = data.mac || null;
+						macFetched = true;
+					}
+					if (cachedMac !== null) {
+						config.headers["X-Mac"] = cachedMac;
+					}
+				}
+
+				config.headers["Content-Type"] = "application/json";
+				return config;
+			},
+			function (error: AxiosError) {
+				return Promise.reject(error);
+			},
+		);
+
+		axios.interceptors.response.use(
+			function (response: AxiosResponse): AxiosResponse {
+				return response;
+			},
+			async function (error: AxiosError): Promise<AxiosResponse> {
+				if (!error.response) {
+					return Promise.reject(error);
+				}
+
+				// Retry before reporting anything: the error overlay only shows once retries are exhausted.
+				const retryConfig = error.config as MacRetryConfig | undefined;
+				const conflictAttempt = retryConfig?.__conflictAttempt ?? 0;
+				if (error.response.status === 409 && retryConfig !== undefined && conflictAttempt < (retryConfig.conflictRetries ?? 0)) {
+					retryConfig.__conflictAttempt = conflictAttempt + 1;
+					await new Promise((resolve) => setTimeout(resolve, CONFLICT_RETRY_BASE_DELAY_MS * 2 ** conflictAttempt));
+					return axios(retryConfig);
+				}
+
+				// Both password login forms display throttling inline.
+				if (error.response.status === 429 && error.config?.method === "post" && error.config.url?.endsWith("/api/v2/Auth::login")) {
+					return Promise.reject(error);
+				}
+
+				const data = await extractErrorData(error.response.data);
+				const message = data.message || "An error occurred";
+
+				// The gallery password screen takes over (see useGalleryLock): no error overlay.
+				if (error.response.status === 401 && message === "Gallery password required") {
+					window.dispatchEvent(new CustomEvent("gallery_locked"));
+					return Promise.reject(error);
+				}
+
+				if (
+					data.message &&
+					["Password required", "Password is invalid", "Album is not enabled for password-based access", "Login required."].find(
+						(e) => e === message,
+					) !== undefined
+				) {
+					return Promise.reject(error);
+				}
+
+				if (error.response.status === 419) {
+					const event = new CustomEvent("session_expired");
+					window.dispatchEvent(event);
+					return Promise.reject(error);
+				}
+
+				// A cached mac can go stale mid-session (tab left open past the signer's
+				// window). Invalidate it and retry once - if the retry also 401s (e.g. the
+				// feature was disabled meanwhile), __macRetried stops this from looping.
+				const config = error.config as MacRetryConfig | undefined;
+				if (error.response.status === 401 && config !== undefined && needsMac(config.url) && !config.__macRetried) {
+					cachedMac = null;
+					macFetched = false;
+					config.__macRetried = true;
+					return axios(config);
+				}
+
+				// Blob-typed requests (thumb assets, zip/photo downloads) degrade gracefully on
+				// their own (e.g. Thumb.vue falls back to a placeholder icon) - surfacing a
+				// global error overlay on top of that would just be noise for something the
+				// caller already handles silently.
+				const isBlobRequest = error.config?.responseType === "blob";
+
+				if (error.response.status && !isNaN(error.response.status) && error.response.status !== 404 && !isBlobRequest) {
+					const event = new CustomEvent("error", { detail: data });
+					window.dispatchEvent(event);
+				}
+
+				return Promise.reject(error);
+			},
+		);
+	},
+};
+
+export default AxiosConfig;

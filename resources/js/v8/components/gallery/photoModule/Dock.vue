@@ -1,0 +1,203 @@
+<template>
+	<div
+		v-if="photoStore.photo"
+		ref="dockZone"
+		:class="{
+			'absolute top-0 w-full sm:w-1/2 left-1/2 -translate-x-1/2 pointer-events-none': true,
+			'transition-opacity duration-500 ease-in-out': !isTouchDevice(),
+			'lg:opacity-100': !isTouchDevice() && isHovered,
+			'opacity-50': !isTouchDevice() && !isFullTransparency,
+			'lg:opacity-20': !isTouchDevice() && !isFullTransparency && !isHovered,
+			'opacity-75': isTouchDevice() && !isFullTransparency,
+			'opacity-0': isFullTransparency,
+			'z-20 mt-14 sm:mt-0 sm:h-1/4': true,
+			hidden: is_slideshow_active,
+			'hidden sm:block': are_details_open,
+		}"
+	>
+		<span class="absolute left-1/2 -translate-x-1/2 p-1 min-w-[25%] w-full filter-shadow text-center">
+			<UTooltip v-if="photoStore.live_photo_controls !== undefined" :text="$t('gallery.motion_photo')">
+				<DockButton
+					pi="lucide:circle-dot-dashed"
+					:aria-label="$t('gallery.motion_photo')"
+					:aria-pressed="photoStore.is_live_playing"
+					:class="photoStore.is_live_playing ? 'text-primary-500' : 'text-white lg:hover:text-primary-500'"
+					@click="photoStore.live_photo_controls?.toggle()"
+				/>
+			</UTooltip>
+			<template v-if="props.canEdit">
+				<UTooltip v-if="photoStore.photo.is_highlighted" :text="$t('gallery.photo.actions.unhighlight')">
+					<DockButton
+						:pi="`lucide:flag ${FILL_OVERRIDE_CLASS}`"
+						:aria-label="$t('gallery.photo.actions.unhighlight')"
+						class="text-yellow-500 lg:hover:text-yellow-100"
+						@click="emits('toggleHighlight')"
+					/>
+				</UTooltip>
+				<UTooltip v-else :text="$t('gallery.photo.actions.highlight')">
+					<DockButton
+						pi="lucide:flag"
+						:aria-label="$t('gallery.photo.actions.highlight')"
+						class="text-white lg:hover:text-yellow-500"
+						@click="emits('toggleHighlight')"
+					/>
+				</UTooltip>
+				<UTooltip v-if="!isTimeline" :text="$t('gallery.photo.actions.set_album_header')">
+					<DockButton
+						pi="lucide:image"
+						:aria-label="$t('gallery.photo.actions.set_album_header')"
+						class="lg:hover:text-primary-500 text-white"
+						@click="emits('setAlbumHeader')"
+					/>
+				</UTooltip>
+				<UTooltip v-if="isWatermarkerEnabled" :text="$t('gallery.album.hero.watermark')">
+					<DockButton
+						pi="lucide:barcode"
+						:aria-label="$t('gallery.album.hero.watermark')"
+						class="lg:hover:text-primary-500 text-white"
+						@click="watermark"
+					/>
+				</UTooltip>
+				<UTooltip v-if="isFaceRecognitionEnabled" :text="$t('people.scan_faces')">
+					<DockButton
+						pi="lucide:smile"
+						:aria-label="$t('people.scan_faces')"
+						class="lg:hover:text-primary-500 text-white"
+						@click="scanFaces"
+					/>
+				</UTooltip>
+				<template v-if="lycheeStore.can_rotate && !photoStore.photo.precomputed.is_360">
+					<DockButton
+						icon="counterclockwise"
+						:aria-label="$t('gallery.photo.actions.rotate_ccw')"
+						class="fill-white lg:hover:fill-primary-500"
+						@click="emits('rotatePhotoCCW')"
+					/>
+					<DockButton
+						icon="clockwise"
+						:aria-label="$t('gallery.photo.actions.rotate_cw')"
+						class="fill-white lg:hover:fill-primary-500"
+						@click="emits('rotatePhotoCW')"
+					/>
+				</template>
+				<UTooltip v-if="albumStore.rights?.can_move_content" :text="$t('gallery.photo.actions.move')">
+					<DockButton
+						pi="lucide:folder"
+						:aria-label="$t('gallery.photo.actions.move')"
+						class="lg:hover:text-primary-500 text-white"
+						@click="emits('toggleMove')"
+					/>
+				</UTooltip>
+				<UTooltip :text="$t('gallery.photo.actions.delete')">
+					<DockButton
+						icon="trash"
+						:aria-label="$t('gallery.photo.actions.delete')"
+						class="fill-red-600 lg:fill-white lg:hover:fill-red-600"
+						@click="emits('toggleDelete')"
+					/>
+				</UTooltip>
+			</template>
+		</span>
+	</div>
+</template>
+<script setup lang="ts">
+import PhotoService from "@/services/photo-service";
+import FaceDetectionService from "@/services/face-detection-service";
+import DockButton from "./DockButton.vue";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+import { useTogglablesStateStore } from "@/stores/ModalsState";
+import { isTouchDevice } from "@/utils/keybindings-utils";
+import { storeToRefs } from "pinia";
+import { computed, ref } from "vue";
+import { usePointerZone } from "@/v8/composables/photo/usePointerZone";
+import { useAppToast } from "@/v8/composables/useAppToast";
+import { trans } from "laravel-vue-i18n";
+import { useGlobalRights } from "@/composables/useGlobalRights";
+import { useRoute } from "vue-router";
+import { usePhotoStore } from "@/stores/PhotoState";
+import { useAlbumStore } from "@/stores/AlbumState";
+import { FILL_OVERRIDE_CLASS } from "@/v8/icons";
+import { needSizeVariantsWatermark } from "@/utils/watermarkHelpers";
+
+const toast = useAppToast();
+const lycheeStore = useLycheeStateStore();
+const photoStore = usePhotoStore();
+const albumStore = useAlbumStore();
+const { rights } = useGlobalRights();
+const togglableStore = useTogglablesStateStore();
+const { is_slideshow_active, are_details_open } = storeToRefs(togglableStore);
+
+// The dock zone ignores pointer events so clicks reach the face overlay below; only the buttons are interactive.
+const dockZone = ref<HTMLElement | null>(null);
+const { isInside: isHovered } = usePointerZone(dockZone);
+
+const isWatermarkerEnabled = computed(
+	() =>
+		rights.value?.modules.is_watermarker_enabled &&
+		photoStore.photo &&
+		albumStore.rights?.can_edit &&
+		needSizeVariantsWatermark(photoStore.photo.size_variants),
+);
+
+const isFaceRecognitionEnabled = computed(() => lycheeStore.is_face_recognition_enabled && photoStore.photo && albumStore.rights?.can_edit);
+
+function watermark() {
+	if (!photoStore.photo) {
+		return;
+	}
+
+	PhotoService.watermark([photoStore.photo.id]).then(() => {
+		toast.add({
+			severity: "success",
+			summary: trans("toasts.success"),
+			life: 3000,
+		});
+	});
+}
+
+function scanFaces() {
+	if (!photoStore.photo) {
+		return;
+	}
+
+	FaceDetectionService.scanPhotos([photoStore.photo.id])
+		.then(() => {
+			toast.add({
+				severity: "success",
+				summary: trans("people.scan_success"),
+				life: 3000,
+			});
+		})
+		.catch((e) => {
+			toast.add({
+				severity: "error",
+				summary: e.response?.data?.message || trans("toasts.error"),
+				life: 3000,
+			});
+		});
+}
+
+const props = defineProps<{
+	/** Edit buttons; without them the dock holds only the live button (FR-100-06). */
+	canEdit: boolean;
+}>();
+
+const emits = defineEmits<{
+	toggleHighlight: [];
+	setAlbumHeader: [];
+	rotatePhotoCCW: [];
+	rotatePhotoCW: [];
+	toggleMove: [];
+	toggleDelete: [];
+}>();
+
+const route = useRoute();
+const isTimeline = computed(() => route.name === "timeline");
+
+const isFullTransparency = computed(() => {
+	if (isTouchDevice()) {
+		return lycheeStore.is_mobile_dock_full_transparency_enabled;
+	}
+	return lycheeStore.is_desktop_dock_full_transparency_enabled;
+});
+</script>

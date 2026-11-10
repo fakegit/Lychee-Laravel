@@ -1,0 +1,42 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Actions\Photo\Pipes\Standalone;
+
+use App\DTO\PhotoCreate\StandaloneDTO;
+use App\Image\StreamStat;
+use Illuminate\Support\Facades\Log;
+
+class SetOriginalChecksum extends AbstractStandalonePipe
+{
+	protected function execute(StandaloneDTO $state, \Closure $next): StandaloneDTO
+	{
+		Log::debug('Computing original checksum');
+
+		// Unfortunately, we must read the entire file once to create the
+		// true, original checksum.
+		// It does **not** suffice to use the stream statistics, when the
+		// image file is loaded, because we cannot guarantee that the image
+		// loader reads the file entirely in one pass.
+		//  a) The image loader may decide to seek in the file, skip
+		//     certain parts (like EXIF information), re-read chunks of the
+		//     file multiple times or out-of-order.
+		//  b) The image loader may not load the entire file, if the image
+		//     stream is shorter than the file and followed by additional
+		//     non-image information (e.g. as it is the case for Google
+		//     Live Photos)
+		$state->photo->original_checksum = StreamStat::createFromLocalFile($state->source_file)->checksum;
+
+		return $next($state);
+	}
+
+	protected function getSpanName(): string
+	{
+		return 'photo.set_original_checksum';
+	}
+}

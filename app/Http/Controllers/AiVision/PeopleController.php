@@ -1,0 +1,120 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Http\Controllers\AiVision;
+
+use App\Constants\PersonAlbumPersons;
+use App\Http\Requests\Person\DestroyPersonRequest;
+use App\Http\Requests\Person\ListPersonsRequest;
+use App\Http\Requests\Person\ShowPersonRequest;
+use App\Http\Requests\Person\StorePersonRequest;
+use App\Http\Requests\Person\UpdatePersonRequest;
+use App\Http\Resources\Collections\PaginatedPersonsResource;
+use App\Http\Resources\Models\PersonResource;
+use App\Jobs\CleanupOrphanedPersonAlbumsJob;
+use App\Models\Face;
+use App\Models\Person;
+use App\Repositories\ConfigManager;
+use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * CRUD controller for Person records.
+ */
+class PeopleController extends Controller
+{
+	/**
+	 * List persons (paginated).
+	 * Filters non-searchable persons for non-admin users who are not linked to the person.
+	 *
+	 * @return PaginatedPersonsResource
+	 */
+	public function index(ListPersonsRequest $_request): PaginatedPersonsResource
+	{
+		$user = Auth::user();
+		$query = Person::query()
+			->when($user?->may_administrate !== true, fn ($q) => $q->searchable($user?->id))
+			->orderBy('name');
+
+		$persons = $query->paginate(50);
+
+		return new PaginatedPersonsResource($persons);
+	}
+
+	/**
+	 * Show a single person.
+	 *
+	 * @return PersonResource
+	 */
+	public function show(ShowPersonRequest $request): PersonResource
+	{
+		return PersonResource::fromModel($request->person());
+	}
+
+	/**
+	 * Create a new Person.
+	 *
+	 * @return PersonResource
+	 */
+	public function store(StorePersonRequest $request): PersonResource
+	{
+		$is_searchable_default = app(ConfigManager::class)->getValueAsBool('ai_vision_face_person_is_searchable_default');
+
+		$person = new Person();
+		$person->name = $request->name();
+		$person->user_id = $request->userId();
+		$person->is_searchable = $is_searchable_default;
+		$person->save();
+
+		return PersonResource::fromModel($person);
+	}
+
+	/**
+	 * Update a Person (name, searchability, and/or linked user).
+	 *
+	 * @return PersonResource
+	 */
+	public function update(UpdatePersonRequest $request): PersonResource
+	{
+		$person = $request->person();
+
+		if ($request->isSearchable() !== null) {
+			$person->is_searchable = $request->isSearchable();
+		}
+
+		if ($request->name() !== null) {
+			$person->name = $request->name();
+		}
+
+		if ($request->hasUserId()) {
+			$person->user_id = $request->userId();
+		}
+
+		$person->save();
+
+		return PersonResource::fromModel($person);
+	}
+
+	/**
+	 * Delete a Person. All associated faces will have their person_id set to null.
+	 */
+	public function destroy(DestroyPersonRequest $request): void
+	{
+		$person = $request->person();
+		// Break the link between the person and its person albums
+		DB::table(PersonAlbumPersons::PERSON_ALBUM_PERSONS)->where('person_id', '=', $person->id)->delete();
+		// detach all faces from the person and mark them as dismissed
+		Face::where('person_id', '=', $person->id)->update(['person_id' => null, 'is_dismissed' => true]);
+
+		// Delete the person record (we should be clean).
+		$person->delete();
+
+		CleanupOrphanedPersonAlbumsJob::dispatch();
+	}
+}

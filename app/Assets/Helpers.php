@@ -1,177 +1,95 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\Assets;
 
-use App\Exceptions\DivideByZeroException;
-use App\Models\Configs;
-use Illuminate\Support\Facades\File;
-use WhichBrowser\Parser as BrowserParser;
+use App\Exceptions\Internal\ZeroModuloException;
+use Exception;
+use Illuminate\Http\Request;
+use Safe\Exceptions\FilesystemException;
+use Safe\Exceptions\InfoException;
+use Safe\Exceptions\PcreException;
+use function Safe\ini_get;
+use function Safe\mkdir;
+use function Safe\preg_match;
+use function Safe\rmdir;
+use function Safe\unlink;
 
 class Helpers
 {
-	private int $numTab = 0;
-
-	/**
-	 * Initialize the Facade.
-	 */
-	public function __construct()
-	{
-		$this->numTab = 0;
-	}
-
-	/**
-	 * Add UnixTimeStamp to file path suffix.
-	 *
-	 * @param string $filePath
-	 *
-	 * @return string
-	 */
-	public function cacheBusting(string $filePath): string
-	{
-		if (File::exists($filePath)) {
-			// @codeCoverageIgnoreStart
-			$unixTimeStamp = File::lastModified($filePath);
-
-			return "{$filePath}?{$unixTimeStamp}";
-			// @codeCoverageIgnoreEnd
-		}
-
-		return $filePath;
-	}
-
-	/**
-	 * return device type as string:
-	 * desktop, mobile, pda, dect, tablet, gaming, ereader,
-	 * media, headset, watch, emulator, television, monitor,
-	 * camera, printer, signage, whiteboard, devboard, inflight,
-	 * appliance, gps, car, pos, bot, projector.
-	 *
-	 * @return string
-	 */
-	public function getDeviceType(): string
-	{
-		$result = new BrowserParser(getallheaders(), ['cache' => app('cache.store')]);
-
-		return $result->getType();
-	}
-
-	/*
-	 * Generate an id from current microtime.
-	 *
-	 * @return string generated ID
-	 */
-	public function generateID()
-	{
-		// Generate id based on the current microtime
-
-		if (
-			PHP_INT_MAX == 2147483647
-			|| Configs::get_value('force_32bit_ids', '0') === '1'
-		) {
-			// For 32-bit installations, we can only afford to store the
-			// full seconds in id.  The calling code needs to be able to
-			// handle duplicate ids.  Note that this also exposes us to
-			// the year 2038 problem.
-			$id = sprintf('%010d', microtime(true));
-		} else {
-			// Ensure 4 digits after the decimal point, 15 characters
-			// total (including the decimal point), 0-padded on the
-			// left if needed (shouldn't be needed unless we move back in
-			// time :-) )
-			$id = sprintf('%015.4f', microtime(true));
-			$id = str_replace('.', '', $id);
-		}
-
-		return $id;
-	}
-
 	/**
 	 * Return the 32bit truncated version of a number seen as string.
 	 *
-	 * @param string $id
-	 * @param int    $prevShortId
+	 * @param int $php_max predefined so set to MAX php during migration
+	 *                     but allow to actually test the code
 	 *
 	 * @return string updated ID
 	 */
-	public function trancateIf32(string $id, int $prevShortId = 0)
+	public function trancateIf32(string $id, int $prev_short_id = 0, int $php_max = PHP_INT_MAX): string
 	{
-		if (PHP_INT_MAX > 2147483647) {
+		if ($php_max > 2147483647) {
 			return $id;
 		}
 
 		// Chop off the last four digits.
-		$shortId = intval(substr($id, 0, -4));
-		if ($shortId <= $prevShortId) {
-			$shortId = $prevShortId + 1;
+		$short_id = intval(substr($id, 0, -4));
+		if ($short_id <= $prev_short_id) {
+			$short_id = $prev_short_id + 1;
 		}
 
-		return $shortId;
+		return (string) $short_id;
 	}
 
 	/**
-	 * Returns the extension of the filename (path or URI) or an empty string.
+	 * Return the temporary directory path used for uploads.
 	 *
-	 * @param $filename
-	 * @param bool $isURI
-	 *
-	 * @return string extension of the filename starting with a dot
+	 * When features.use-system-temp-dir is true (default), returns sys_get_temp_dir().
+	 * Otherwise returns storage/tmp/uploads_parts, creating it if needed.
 	 */
-	public function getExtension($filename, $isURI = false)
+	public function getTmpDir(): string
 	{
-		// If $filename is an URI, get only the path component
-		if ($isURI === true) {
-			$filename = parse_url($filename, PHP_URL_PATH);
+		if (config('features.use-system-temp-dir', true) === true) {
+			return sys_get_temp_dir();
 		}
 
-		$extension = pathinfo($filename, PATHINFO_EXTENSION);
-
-		// Special cases
-		// https://github.com/electerious/Lychee/issues/482
-		list($extension) = explode(':', $extension, 2);
-
-		if (empty($extension) === false) {
-			$extension = '.' . $extension;
+		$path = storage_path('tmp/uploads_parts');
+		if (!file_exists($path)) {
+			mkdir($path, 0755, true);
 		}
 
-		return $extension;
+		return $path;
 	}
 
 	/**
 	 * Check if $path has readable and writable permissions.
-	 *
-	 * @param $path
-	 *
-	 * @return bool
 	 */
-	public function hasPermissions($path)
+	public function hasPermissions(string $path): bool
 	{
 		// Check if the given path is readable and writable
 		// Both functions are also verifying that the path exists
-		if (
-			file_exists($path) === true && is_readable($path) === true
-			&& is_writeable($path) === true
-		) {
-			return true;
-		}
-
-		return false;
+		return
+			file_exists($path) &&
+			is_readable($path) &&
+			is_writable($path);
 	}
 
 	/**
 	 * Check if $path has readable and writable permissions.
-	 *
-	 * @param $path
-	 *
-	 * @return bool
 	 */
-	public function hasFullPermissions($path)
+	public function hasFullPermissions(string $path): bool
 	{
 		// Check if the given path is readable and writable
 		// Both functions are also verifying that the path exists
 		if (
-			file_exists($path) === true && is_readable($path) === true
-			&& is_executable($path) === true
-			&& is_writeable($path) === true
+			file_exists($path) === true &&
+			is_readable($path) === true &&
+			is_executable($path) === true &&
+			is_writable($path) === true
 		) {
 			return true;
 		}
@@ -183,111 +101,259 @@ class Helpers
 	 * Compute the GCD of a and b
 	 * This function is used to simplify the shutter speed when given in the form of e.g. 50/100.
 	 *
-	 * @param $a
-	 * @param $b
-	 *
-	 * @return mixed
-	 *
-	 * @throws DivideByZeroException
+	 * @throws ZeroModuloException
 	 */
-	public function gcd($a, $b)
+	public function gcd(int $a, int $b): int
 	{
-		if ($b == 0) {
-			throw new DivideByZeroException();
+		if ($b === 0) {
+			throw new ZeroModuloException();
 		}
 
-		return ($a % $b) ? Helpers::gcd($b, $a % $b) : $b;
+		return ($a % $b) !== 0 ? $this->gcd($b, $a % $b) : $b;
 	}
 
 	/**
-	 * Properly convert a boolean to a string
-	 * the default php function returns '' in case of false, this is not the behavior we want.
+	 * From https://www.php.net/manual/en/function.disk-total-space.php.
 	 */
-	public function str_of_bool(bool $b)
+	public function getSymbolByQuantity(float $bytes): string
 	{
-		return $b ? '1' : '0';
-	}
+		if ($bytes <= 0) {
+			return '0 B';
+		}
 
-	/**
-	 * Given a Url generate the @2x correcponding url.
-	 * This is used for thumbs, small and medium.
-	 */
-	public function ex2x($url)
-	{
-		$thumbUrl2x = explode('.', $url);
-
-		return (count($thumbUrl2x) === 2) ?
-			$thumbUrl2x[0] . '@2x.' . $thumbUrl2x[1] :
-			$thumbUrl2x[0] . '@2x';
-	}
-
-	/**
-	 * Returns the available licenses.
-	 */
-	public function get_all_licenses()
-	{
-		return [
-			'none',
-			'reserved',
-			'CC0',
-			'CC-BY-1.0',
-			'CC-BY-2.0',
-			'CC-BY-2.5',
-			'CC-BY-3.0',
-			'CC-BY-4.0',
-			'CC-BY-NC-1.0',
-			'CC-BY-NC-2.0',
-			'CC-BY-NC-2.5',
-			'CC-BY-NC-3.0',
-			'CC-BY-NC-4.0',
-			'CC-BY-NC-ND-1.0',
-			'CC-BY-NC-ND-2.0',
-			'CC-BY-NC-ND-2.5',
-			'CC-BY-NC-ND-3.0',
-			'CC-BY-NC-ND-4.0',
-			'CC-BY-NC-SA-1.0',
-			'CC-BY-NC-SA-2.0',
-			'CC-BY-NC-SA-2.5',
-			'CC-BY-NC-SA-3.0',
-			'CC-BY-NC-SA-4.0',
-			'CC-BY-ND-1.0',
-			'CC-BY-ND-2.0',
-			'CC-BY-ND-2.5',
-			'CC-BY-ND-3.0',
-			'CC-BY-ND-4.0',
-			'CC-BY-SA-1.0',
-			'CC-BY-SA-2.0',
-			'CC-BY-SA-2.5',
-			'CC-BY-SA-3.0',
-			'CC-BY-SA-4.0',
+		$symbols = [
+			'B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB',
 		];
+		$exp = intval(floor(log($bytes) / log(1024.0)));
+
+		if ($exp >= count($symbols)) {
+			// @codeCoverageIgnoreStart
+			// if the number is too large, we fall back to the largest available symbol
+			$exp = count($symbols) - 1;
+			// @codeCoverageIgnoreEnd
+		}
+
+		return sprintf('%.2f %s', ($bytes / pow(1024, $exp)), $symbols[$exp]);
 	}
 
 	/**
-	 * Return incrementing numbers.
+	 * Check if the `exec` function is available.
 	 */
-	public function data_index(): int
+	public function isExecAvailable(): bool
 	{
-		$this->numTab++;
+		try {
+			$disabled_functions = explode(',', ini_get('disable_functions'));
 
-		return $this->numTab;
+			return function_exists('exec') && !in_array('exec', $disabled_functions, true);
+			// @codeCoverageIgnoreStart
+		} catch (InfoException $e) {
+			return false;
+		}
+		// @codeCoverageIgnoreEnd
 	}
 
 	/**
-	 * Reset and return incrementing numbers.
+	 * Given a duration convert it into hms.
+	 *
+	 * @param int|float $d length in seconds
+	 *
+	 * @return string equivalent time string formatted
 	 */
-	public function data_index_r(): int
+	public function secondsToHMS(int|float $d): string
 	{
-		$this->numTab = 1;
+		$h = (int) floor($d / 3600);
+		$m = (int) floor(($d % 3600) / 60);
+		$s = (int) floor($d % 60);
 
-		return $this->numTab;
+		return ($h > 0 ? $h . 'h' : '')
+			. ($m > 0 ? $m . 'm' : '')
+			. ($s > 0 || ($h === 0 && $m === 0) ? $s . 's' : '');
 	}
 
 	/**
-	 * Reset the incrementing number.
+	 * Return true if the upload_max_filesize is bellow what we want.
 	 */
-	public function data_index_set(int $idx = 0): void
+	public function convertSize(string $size): int
 	{
-		$this->numTab = $idx;
+		$size = trim($size);
+		$last = strtolower($size[strlen($size) - 1]);
+		$size = intval($size);
+
+		switch ($last) {
+			case 'g':
+				$size *= 1024;
+				// no break
+			case 'm':
+				$size *= 1024;
+				// no break
+			case 'k':
+				$size *= 1024;
+		}
+
+		return $size;
+	}
+
+	/**
+	 * Parses a human-readable file size (e.g. "512MB", "10 GB") into bytes.
+	 *
+	 * Unlike {@see self::convertSize()} (which parses PHP ini-style suffixes
+	 * like "30M"), this accepts the two-letter unit suffixes used by
+	 * user-facing configuration values.
+	 *
+	 * @param string $size e.g. "100MB", "10GB", "512 KB"
+	 *
+	 * @return int equivalent number of bytes
+	 */
+	public function humanSizeToBytes(string $size): int
+	{
+		try {
+			$matched = preg_match('/^(\d+(?:\.\d+)?)\s?(B|KB|MB|GB|TB)$/i', trim($size), $matches) === 1;
+		} catch (PcreException) {
+			$matched = false;
+		}
+		if (!$matched) {
+			return 0;
+		}
+
+		$value = (float) $matches[1];
+		$unit = strtoupper($matches[2]);
+
+		$multipliers = [
+			'B' => 1,
+			'KB' => 1024,
+			'MB' => 1024 ** 2,
+			'GB' => 1024 ** 3,
+			'TB' => 1024 ** 4,
+		];
+
+		return (int) round($value * $multipliers[$unit]);
+	}
+
+	/**
+	 * Converts a decimal degree into integer degree, minutes and seconds.
+	 *
+	 * @param bool $type - indicates if the passed decimal indicates a
+	 *                   latitude (`true`) or a longitude (`false`)
+	 *
+	 * @returns string
+	 */
+	public function decimalToDegreeMinutesSeconds(float|null $decimal, bool $type): string|null
+	{
+		if ($decimal === null) {
+			return null;
+		}
+
+		$d = abs($decimal);
+
+		// absolute value of decimal must be smaller than 180;
+		if ($d > 180) {
+			return '';
+		}
+
+		// set direction; north assumed
+		if ($type && $decimal < 0) {
+			$direction = 'S';
+		} elseif (!$type && $decimal < 0) {
+			$direction = 'W';
+		} elseif (!$type) {
+			$direction = 'E';
+		} else {
+			$direction = 'N';
+		}
+
+		// get degrees
+		$degrees = floor($d);
+
+		// get seconds
+		$seconds = ($d - $degrees) * 3600;
+
+		// get minutes
+		$minutes = floor($seconds / 60);
+
+		// reset seconds
+		$seconds = floor($seconds - $minutes * 60);
+
+		return $degrees . '° ' . $minutes . "' " . $seconds . '" ' . $direction;
+	}
+
+	/**
+	 * Censor a word by replacing half of its character by stars.
+	 *
+	 * @param string $string           to censor
+	 * @param float  $percent_of_clear the amount of the original string that remains untouched. The lower the value, the higher the censoring.
+	 */
+	public function censor(string $string, float $percent_of_clear = 0.5): string
+	{
+		$str_length = strlen($string);
+		if ($str_length === 0) {
+			return '';
+		}
+
+		// Length of replacement
+		$censored_length = $str_length - (int) floor($str_length * $percent_of_clear);
+
+		// we leave half the space in front and behind.
+		$start = (int) floor(($str_length - $censored_length) / 2);
+
+		$replacement = str_repeat('*', $censored_length);
+
+		return substr_replace($string, $replacement, $start, $censored_length);
+	}
+
+	/**
+	 * Format exception trace as text.
+	 *
+	 * @codeCoverageIgnore
+	 */
+	public function exceptionTraceToText(\Exception $e): string
+	{
+		$renderer = new ArrayToTextTable();
+
+		return $renderer->getTable(collect($e->getTrace())->map(fn (array $err) => [
+			'class' => $err['class'] ?? $err['file'] ?? '?',
+			'line' => $err['line'] ?? '?',
+			'function' => $err['function']])->all());
+	}
+
+	/**
+	 * Given a request return the uri WITH the query paramters.
+	 * This makes sure that we handle the case where the query parameters are empty or contains an album id or pagination.
+	 */
+	public function getUriWithQueryString(Request $request): string
+	{
+		/** @var array<string,mixed> $query */
+		$query = $request->query();
+		if ($query === []) {
+			return $request->path();
+		}
+
+		return $request->path() . '?' . http_build_query($query);
+	}
+
+	/**
+	 * Actually remove the directory recursively.
+	 *
+	 * @param string $dir
+	 *
+	 * @return void
+	 *
+	 * @throws FilesystemException
+	 */
+	public function remove_dir(string $dir): void
+	{
+		$it = new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS);
+		$files = new \RecursiveIteratorIterator($it, \RecursiveIteratorIterator::CHILD_FIRST);
+		foreach ($files as $file) {
+			/** @var \SplFileInfo $file */
+			if ($file->isLink() || $file->isFile()) {
+				// Remove files and symlinks without following them
+				unlink($file->getPathname());
+				continue;
+			}
+			if ($file->isDir()) {
+				rmdir($file->getPathname());
+			}
+		}
+		rmdir($dir);
 	}
 }

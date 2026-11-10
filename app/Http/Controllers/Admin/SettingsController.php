@@ -1,0 +1,379 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Http\Controllers\Admin;
+
+use App\Actions\Diagnostics\Pipes\Infos\DockerVersionInfo;
+use App\Constants\FileSystem;
+use App\Enum\CacheTag;
+use App\Enum\ConfigType;
+use App\Events\AlbumListingCacheFlushRequested;
+use App\Events\MapListingCacheFlushRequested;
+use App\Events\PhotoBucketsRecomputed;
+use App\Events\PhotoListingCacheFlushRequested;
+use App\Events\TaggedRouteCacheUpdated;
+use App\Exceptions\InsufficientFilesystemPermissions;
+use App\Http\Requests\Settings\GetAllConfigsRequest;
+use App\Http\Requests\Settings\SetConfigsRequest;
+use App\Http\Requests\Settings\SetCSSSettingRequest;
+use App\Http\Requests\Settings\SetJSSettingRequest;
+use App\Http\Resources\GalleryConfigs\SettingsConfig;
+use App\Http\Resources\Models\ConfigCategoryResource;
+use App\Jobs\RecomputeAllAlbumBucketsJob;
+use App\Jobs\RecomputeAllPhotoBucketsJob;
+use App\Models\ConfigCategory;
+use App\Models\Configs;
+use Illuminate\Routing\Controller;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+
+/**
+ * Controller responsible for the config.
+ */
+class SettingsController extends Controller
+{
+	/**
+	 * Config keys whose change affects an album listing with no per-album row
+	 * to hook (global sort/pagination/feature-toggle config) — closes over
+	 * every cached album listing via one coarse, instance-wide flush.
+	 */
+	public const ALBUM_LISTING_COARSE_FLUSH_CONFIGS = [
+		'sorting_albums_col',
+		'sorting_albums_order',
+		'sorting_pinned_albums_col',
+		'sorting_pinned_albums_order',
+		'deduplicate_pinned_albums',
+		'ai_vision_face_enabled',
+		'albums_per_page',
+		'timeline_albums_granularity',
+		'timeline_album_date_format_year',
+		'timeline_album_date_format_month',
+		'timeline_album_date_format_day',
+		'title_bucket_mode',
+		'title_bucket_prefix_length',
+	];
+
+	/**
+	 * Config keys whose change rewrites every `albums.bucket_key`
+	 * (FR-092-13): they decide which value the key holds for root albums
+	 * and the children of every parent without its own album sorting.
+	 * Granularity, prefix length and order only change the read scheme:
+	 * {@see self::ALBUM_LISTING_COARSE_FLUSH_CONFIGS} covers them.
+	 */
+	public const ALBUM_BUCKET_RECOMPUTE_CONFIGS = [
+		'sorting_albums_col',
+		'title_bucket_mode',
+	];
+
+	/**
+	 * Config keys whose change rewrites every `photo_album.bucket_key`
+	 * (FR-092-13); {@see \App\Jobs\RecomputeAllPhotoBucketsJob} flushes
+	 * every cached photo listing once the keys are written.
+	 */
+	public const PHOTO_BUCKET_RECOMPUTE_CONFIGS = [
+		'sorting_photos_col',
+		'photo_title_bucket_mode',
+	];
+
+	/**
+	 * Config keys whose change only changes the photo read scheme, its
+	 * labels or the row order (FR-092-13): every cached photo listing is
+	 * flushed, no key rewritten.
+	 */
+	public const PHOTO_LISTING_COARSE_FLUSH_CONFIGS = [
+		'timeline_photos_granularity',
+		'timeline_photo_date_format_year',
+		'timeline_photo_date_format_month',
+		'timeline_photo_date_format_day',
+		'timeline_photo_date_format_hour',
+		'timeline_photo_date_format_hour_multi_day',
+		'photo_title_bucket_prefix_length',
+		'sorting_photos_order',
+	];
+
+	/**
+	 * Config keys whose change affects `TimelineAlbum`'s photo-listing
+	 * cache with no per-photo event to hook (visibility/sort/access
+	 * toggles read fresh on every request) - closes the coarse tag via
+	 * {@see PhotoBucketsRecomputed} (T-066-20; no blanket config-change
+	 * cache-flush mechanism existed for photo listings prior to this
+	 * feature - {@see self::ALBUM_LISTING_COARSE_FLUSH_CONFIGS}/
+	 * {@see AlbumListingCacheFlushRequested} is this const's own structural
+	 * precedent, for album listings).
+	 */
+	public const TIMELINE_PHOTO_LISTING_COARSE_FLUSH_CONFIGS = [
+		'hide_nsfw_in_timeline',
+		'timeline_photos_order',
+		'timeline_photos_granularity',
+		'timeline_page_enabled',
+		'timeline_photos_public',
+	];
+
+	/**
+	 * Config keys whose change affects the Map's cache with no per-photo
+	 * event to hook (visibility/sub-album-inclusion toggles read fresh on
+	 * every request) - Feature 067's FR-067-24, mirroring
+	 * {@see self::TIMELINE_PHOTO_LISTING_COARSE_FLUSH_CONFIGS}'s own
+	 * precedent (itself mirroring {@see self::ALBUM_LISTING_COARSE_FLUSH_CONFIGS}/
+	 * {@see \App\Events\AlbumListingCacheFlushRequested}, Q-053-05).
+	 *
+	 * `file_name_hidden` included: `QueryMapPhotos` blanks `titles[]` for
+	 * guests only when it actually computes a response
+	 * (`$hide_titles = ... && $user === null`) - the cache key it's stored
+	 * under carries no `file_name_hidden` dimension, so a warm guest-scoped
+	 * entry cached while the setting was off keeps serving real titles to
+	 * guests after an admin turns it on, until TTL expiry (CWE-200). Flushing
+	 * on change closes that window the same way the other three keys already
+	 * close theirs.
+	 */
+	public const MAP_LISTING_COARSE_FLUSH_CONFIGS = [
+		'hide_nsfw_in_map',
+		'map_include_subalbums',
+		'map_display',
+		'map_display_public',
+		'file_name_hidden',
+	];
+
+	public const V8_CONFIGS = [
+		'album_thumb_min_width',
+		'album_thumb_gap',
+		'site_logo',
+		'primary_color',
+		'enable_design_system',
+		'secondary_color',
+		'success_color',
+		'warning_color',
+		'error_color',
+		'info_color',
+		'neutral_color',
+		'landing_logo',
+		'landing_header_logo',
+		'breadcrumb_enabled',
+		'rounded_corners_enabled',
+		'album_border_enabled',
+		'selection_border_enabled',
+		'selection_overlay_enabled',
+		'photo_ken_burns_on_hover_enabled',
+		'photo_ken_burns_on_hover_scale',
+		'photo_ken_burns_on_hover_duration',
+		'timeline_lens_height',
+		'timeline_lens_falloff',
+		'timeline_lens_magnification',
+		'photo_share_card_enabled',
+		'flags_enabled',
+		'photo_flags_enabled',
+		'cover_id_flag_enabled',
+		'header_id_flag_enabled',
+		'highlighted_flag_enabled',
+		'validated_flag_enabled',
+		'smart_album_flags_enabled',
+		'album_flags_enabled',
+		'public_hidden_flag_enabled',
+		'public_visible_flag_enabled',
+		'password_flag_enabled',
+		'sensitive_flag_enabled',
+		'expert_album_settings',
+		'sm_pinterest_url',
+		'sm_deviantart_url',
+		'sm_tumblr_url',
+		'sm_500px_url',
+		'sm_pixelfeed_url',
+		'sm_discord_url',
+		'sm_reddit_url',
+		'landing_layout',
+		'landing_intro_screen_enabled',
+		'landing_backdrop_opacity',
+		'landing_hero_text_position',
+		'landing_hero_text_color',
+		'landing_hero_text_opacity',
+		'landing_animation_preset',
+		'landing_about_enabled',
+		'landing_about_text',
+		'landing_featured_items_enabled',
+		'landing_featured_items_mode',
+		'landing_featured_items_count',
+		'landing_cta_text',
+		'landing_cta_position',
+		'landing_cta_shift_type',
+		'landing_cta_shift_x',
+		'landing_cta_shift_x_direction',
+		'landing_cta_shift_y',
+		'landing_cta_shift_y_direction',
+		'landing_meridian_explore_offset',
+		'landing_meridian_contact_offset',
+		'landing_meridian_explore_line_position',
+		'landing_meridian_contact_line_position',
+		'landing_login_position',
+		'photo_click_action',
+		'is_photo_minimap_enabled',
+		'is_photo_minimap_enabled_mobile',
+		'photo_minimap_idle_opacity',
+		'photo_minimap_idle_opacity_mobile',
+		'photo_minimap_fade_delay',
+		'mod_frame_clock_time_enabled',
+		'mod_frame_clock_time_format',
+		'mod_frame_clock_date_enabled',
+		'mod_frame_clock_position',
+		'mod_frame_clock_background_color',
+		'mod_frame_clock_background_opacity',
+		'mod_frame_clock_opacity',
+		'mod_frame_info_title_enabled',
+		'mod_frame_info_albums_enabled',
+		'mod_frame_info_exif_enabled',
+		'mod_frame_info_exif_exposure_enabled',
+		'mod_frame_info_exif_camera_enabled',
+		'mod_frame_info_exif_taken_at_enabled',
+		'mod_frame_info_position',
+		'mod_frame_info_background_color',
+		'mod_frame_info_background_opacity',
+		'mod_frame_info_opacity',
+	];
+
+	/**
+	 * Fetch all the settings available in Lychee.
+	 *
+	 * @param GetAllConfigsRequest $request
+	 * @param DockerVersionInfo    $docker_info
+	 * @param GetAllConfigsRequest $request
+	 * @param DockerVersionInfo    $docker_info
+	 *
+	 * @return Collection<int,ConfigCategoryResource>
+	 */
+	public function getAll(GetAllConfigsRequest $request, DockerVersionInfo $docker_info): Collection
+	{
+		$editable_configs = ConfigCategory::with([
+			'configs' => fn ($query) => $query
+				->when(config('features.hide-lychee-SE', false) === true, fn ($q) => $q->where('cat', '!=', 'lychee SE'))
+				->when($request->configs()->getValueAsInt('owner_id') !== Auth::id(), fn ($q) => $q->where('key', '!=', 'license_key'))
+				->when(
+					config('features.enable-caching') === false,
+					fn ($q) => $q->where(fn ($q2) => $q2->where('cat', '!=', 'Mod Cache'))
+				)
+				->when($docker_info->isDocker(), fn ($q) => $q->where('not_on_docker', '!=', true))
+				->when(!$request->verify()->is_supporter() && !$request->configs()->getValueAsBool('enable_se_preview'), fn ($q) => $q->where('level', '=', 0))
+				->when(!$request->verify()->is_pro(), fn ($q) => $q->where('level', '<', 2))
+				->when(config('features.webshop') === false, fn ($q) => $q->where('key', 'NOT LIKE', 'webshop_%'))
+				->when(config('features.ai-vision') === false || config('features.v8') === false, fn ($q) => $q->where('key', 'NOT LIKE', 'ai_vision_%'))
+				->when(config('features.v8') === false, fn ($q) => $q->whereNotIn('key', self::V8_CONFIGS)),
+		])->orderBy('order', 'asc')->get();
+
+		return ConfigCategoryResource::collect($editable_configs->filter(fn ($cat) => $cat->configs->isNotEmpty())->values());
+	}
+
+	/**
+	 * Set a limited number of configurations with the new values.
+	 *
+	 * @param SetConfigsRequest $request
+	 * @param DockerVersionInfo $docker_info
+	 *
+	 * @return Collection<int,ConfigCategoryResource>
+	 */
+	public function setConfigs(SetConfigsRequest $request, DockerVersionInfo $docker_info): Collection
+	{
+		$configs = $request->editable_configs();
+		$write_only_keys = Configs::query()->where('type_range', '=', ConfigType::PASSWORD->value)->pluck('key')->all();
+
+		// First we take care of all the non-write-only configurations.
+		[$write_only_configs, $regular_configs] = $configs->partition(fn ($config) => in_array($config->key, $write_only_keys, true));
+		$regular_configs->each(fn ($config) => Configs::query()->where('key', $config->key)->update(['value' => $config->value ?? '']));
+
+		// Then we handle the write-only configurations
+		// We clear the ones that needs clearing and hash the non-empty ones.
+		// An empty value reaches us as null (ConvertEmptyStringsToNull).
+		[$empty_write_only_configs, $non_empty_write_only_configs] = $write_only_configs->partition(fn ($config) => ($config->value ?? '') === '');
+		$empty_write_only_configs->each(fn ($config) => Configs::query()->where('key', $config->key)->update(['value' => '']));
+		$non_empty_write_only_configs->each(fn ($config) => Configs::query()->where('key', $config->key)->update(['value' => Hash::make($config->value)]));
+
+		// Before any dispatch: a job running on the sync queue must read the
+		// new values.
+		$request->configs()->invalidateCache();
+
+		AlbumListingCacheFlushRequested::dispatchIf($configs->pluck('key')->intersect(self::ALBUM_LISTING_COARSE_FLUSH_CONFIGS)->isNotEmpty());
+		RecomputeAllAlbumBucketsJob::dispatchIf($configs->pluck('key')->intersect(self::ALBUM_BUCKET_RECOMPUTE_CONFIGS)->isNotEmpty());
+		RecomputeAllPhotoBucketsJob::dispatchIf($configs->pluck('key')->intersect(self::PHOTO_BUCKET_RECOMPUTE_CONFIGS)->isNotEmpty());
+		PhotoListingCacheFlushRequested::dispatchIf($configs->pluck('key')->intersect(self::PHOTO_LISTING_COARSE_FLUSH_CONFIGS)->isNotEmpty());
+		PhotoBucketsRecomputed::dispatchIf($configs->pluck('key')->intersect(self::TIMELINE_PHOTO_LISTING_COARSE_FLUSH_CONFIGS)->isNotEmpty(), ['timeline']);
+		MapListingCacheFlushRequested::dispatchIf($configs->pluck('key')->intersect(self::MAP_LISTING_COARSE_FLUSH_CONFIGS)->isNotEmpty());
+
+		TaggedRouteCacheUpdated::dispatch(CacheTag::SETTINGS);
+
+		return $this->getAll($request, $docker_info);
+	}
+
+	/**
+	 * Give the list of available languages.
+	 *
+	 * @return string[]
+	 */
+	public function getLanguages(GetAllConfigsRequest $request): array
+	{
+		return collect(config('app.supported_locale'))->filter(function ($value, $key) {
+			return !str_contains($value, 'json');
+		})->values()->toArray();
+	}
+
+	/**
+	 * Takes the js input text and puts it into `dist/custom.js`.
+	 * This allows admins to actually execute custom js code on their
+	 * Lychee-Laravel installation.
+	 *
+	 * @param SetJSSettingRequest $request
+	 *
+	 * @return void
+	 *
+	 * @throws InsufficientFilesystemPermissions
+	 */
+	public function setJS(SetJSSettingRequest $request): void
+	{
+		$js = $request->getJs();
+		if (Storage::disk(FileSystem::DIST)->put('custom.js', $js) === false) {
+			// @codeCoverageIgnoreStart
+			// We do not test this part as this would require to change the access rights of the file
+			if (Storage::disk(FileSystem::DIST)->get('custom.js') !== $js) {
+				throw new InsufficientFilesystemPermissions('Could not save JS');
+			}
+			// @codeCoverageIgnoreEnd
+		}
+	}
+
+	/**
+	 * Takes the css input text and put it into `dist/user.css`.
+	 * This allows admins to actually personalize the look of their
+	 * installation.
+	 *
+	 * @param SetCSSSettingRequest $request
+	 *
+	 * @return void
+	 *
+	 * @throws InsufficientFilesystemPermissions
+	 */
+	public function setCSS(SetCSSSettingRequest $request): void
+	{
+		$css = $request->getCss();
+		if (Storage::disk(FileSystem::DIST)->put('user.css', $css) === false) {
+			// @codeCoverageIgnoreStart
+			// We do not test this part as this would require to change the access rights of the file
+			if (Storage::disk(FileSystem::DIST)->get('user.css') !== $css) {
+				throw new InsufficientFilesystemPermissions('Could not save CSS');
+			}
+			// @codeCoverageIgnoreEnd
+		}
+	}
+
+	/**
+	 * Return the necessary information to configure the settings page.
+	 *
+	 * @return SettingsConfig
+	 */
+	public function getConfig(GetAllConfigsRequest $request): SettingsConfig
+	{
+		return new SettingsConfig();
+	}
+}

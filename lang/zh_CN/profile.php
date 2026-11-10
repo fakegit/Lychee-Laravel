@@ -1,0 +1,91 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Profile page
+    |--------------------------------------------------------------------------
+    */
+    'title' => '个人资料',
+    'login' => [
+        'header' => '个人资料',
+        'enter_current_password' => '请输入您的当前密码：',
+        'current_password' => '当前密码',
+        'credentials_update' => '您的登录信息将更改为：',
+        'username' => '用户名',
+        'change_password' => '修改密码',
+        'cancel_password_change' => '取消修改密码',
+        'new_password' => '新密码',
+        'confirm_new_password' => '确认新密码',
+        'password_strength_info' => '密码强度是使用 <a href="https://github.com/dropbox/zxcvbn" class="inline-block border-b border-info border-dashed" target="_blank" rel="noreferrer">zxcvbn 算法</a>估算的。',
+        'email_instruction' => '添加您的邮箱以启用邮件通知。如需停止接收邮件，只需删除下方的邮箱地址即可。',
+        'email' => '邮箱',
+        'change' => '修改登录信息',
+        'api_token' => 'API 令牌...',
+        'missing_fields' => '缺少必填项',
+        'ldap_managed' => '用户登录信息由 LDAP 管理。',
+    ],
+    'register' => [
+        'username_exists' => '用户名已存在。',
+        'password_mismatch' => '密码不匹配。',
+        'signup' => '注册',
+        'error' => '注册账户时发生错误。',
+        'success' => '您的账户已成功创建。',
+    ],
+    'admin_setup' => [
+        'header' => '设置您的管理员账户',
+        'welcome' => '欢迎使用 Lychee，<br>让我们从创建管理员账户开始。',
+        'submit' => '创建管理员账户',
+        'success' => '管理员账户创建成功。',
+        'error' => '创建管理员账户时发生错误。',
+        'already_exists' => '管理员账户已设置。',
+    ],
+    'token' => [
+        'unavailable' => '您已查看过此令牌。',
+        'no_data' => '尚未生成 API 令牌。',
+        'disable' => '禁用',
+        'disabled' => '令牌已禁用',
+        'warning' => '此令牌不会再次显示。请复制并将其保存在安全的地方。',
+        'reset' => '重置令牌',
+        'create' => '创建新令牌',
+    ],
+    'oauth' => [
+        'header' => 'OAuth',
+        'header_not_available' => 'OAuth 不可用',
+        'setup_env' => '在 .env 文件中设置凭据',
+        'token_registered' => '%s 令牌已注册。',
+        'setup' => '设置 %s',
+        'reset' => '重置',
+        'credential_deleted' => '凭据已删除！',
+    ],
+    'u2f' => [
+        'header' => '通行密钥/MFA/2FA',
+        'info' => '这仅提供使用 WebAuthn 进行身份验证的功能，以替代用户名和密码。',
+        'empty' => '凭据列表为空！',
+        'not_secure' => '环境不安全。U2F 不可用。',
+        'new' => '注册新设备',
+        'credential_deleted' => '凭据已删除！',
+        'credential_updated' => '凭据已更新！',
+        'credential_registred' => '注册成功！',
+        '5_chars' => '至少需要 5 个字符。',
+    ],
+    'preferences' => [
+        'header' => '偏好设置',
+        'save' => '保存偏好',
+        'reset' => '重置',
+        'change_saved' => '偏好已保存！',
+    ],
+    'shared_albums' => [
+        'instruction' => '选择共享相册（其他用户的相册）在您的图库中的显示方式：',
+        'mode_default' => '使用服务器默认设置',
+        'mode_default_desc' => '继承服务器的默认可见性模式。',
+        'mode_show' => '内联显示',
+        'mode_show_desc' => '共享相册显示在您自己的相册下方。',
+        'mode_separate' => '分开的标签页',
+        'mode_separate_desc' => '在分开的“我的相册”和“与我共享”标签页中查看相册。',
+        'mode_separate_shared_only' => '仅共享',
+        'mode_separate_shared_only_desc' => '分开的标签页，仅显示直接共享的相册（不包括公开相册）。',
+        'mode_hide' => '隐藏',
+        'mode_hide_desc' => '不显示任何共享相册。',
+    ],
+];

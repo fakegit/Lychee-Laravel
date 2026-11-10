@@ -1,0 +1,45 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace Tests;
+
+use App\Models\User;
+use App\Repositories\ConfigManager;
+use Illuminate\Foundation\Bootstrap\HandleExceptions;
+use LycheeVerify\Contract\VerifyInterface;
+use LycheeVerify\Verify;
+use PHPUnit\Event\TestSuite\Loaded;
+use PHPUnit\Event\TestSuite\LoadedSubscriber as LoadedSubscriberInterface;
+
+final class LoadedSubscriber implements LoadedSubscriberInterface
+{
+	use CreatesApplication;
+	use MigrateApplication;
+
+	public function notify(Loaded $event): void
+	{
+		$this->createApplication();
+		$this->migrateApplication();
+
+		app()->singleton(VerifyInterface::class, fn () => new Verify());
+		app()->singleton(ConfigManager::class, fn () => new ConfigManager());
+
+		// If there are any users in the DB, this tends to crash some tests (because we check exact count of users).
+		// Disable FK checks and clean all related tables to avoid constraint violations.
+		if (User::query()->count() > 0) {
+			\Illuminate\Support\Facades\DB::statement('PRAGMA foreign_keys = OFF');
+			\Illuminate\Support\Facades\DB::table('face_suggestions')->delete();
+			\Illuminate\Support\Facades\DB::table('faces')->delete();
+			\Illuminate\Support\Facades\DB::table('persons')->delete();
+			User::truncate();
+			\Illuminate\Support\Facades\DB::statement('PRAGMA foreign_keys = ON');
+		}
+
+		HandleExceptions::flushState();
+	}
+}

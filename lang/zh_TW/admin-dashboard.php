@@ -1,0 +1,90 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+return [
+    'title' => '管理儀表板',
+    'overview' => '總覽',
+    'tools' => '工具',
+    'tool_groups' => [
+        'core' => 'Admin',
+        'monitoring' => '監控',
+        'extensions' => '擴充功能',
+    ],
+    'refresh' => '重新整理',
+    'metrics' => [
+        'photos_count' => '照片',
+        'albums_count' => '相簿',
+        'users_count' => '使用者',
+        'storage_bytes' => '已使用儲存空間',
+        'queued_jobs' => '排隊中的工作',
+        'failed_jobs_24h' => '失敗的工作（24 小時）',
+        'last_successful_job_at' => '上次成功的工作',
+    ],
+    'errors' => [
+        'partial' => '部分指標無法載入。',
+    ],
+    'security' => [
+        'title' => '安全性公告',
+        'description' => '以下漏洞影響您目前的 Lychee 版本。請盡快更新。',
+        'no_cvss' => '（無 CVSS 分數）',
+    ],
+    'update' => [
+        'title' => '更新狀態',
+        'update_available' => '有較新的版本可用（目前：:current，最新：:latest）。',
+        'git_update_available' => '您的安裝版本落後 master :count 個提交。',
+    ],
+    'nsfw_config' => [
+        'title' => 'NSFW 偵測與審核',
+        'tab_settings' => '設定',
+        'tab_presets' => '預設組合',
+        'description' => '設定上傳照片的 NSFW 內容自動偵測。照片會透過外部分類服務以非同步方式掃描。',
+        'enable' => '啟用 NSFW 分類',
+        'preset' => '偵測預設組合',
+        'scan_trusted' => '掃描受信任使用者',
+        'section_general' => '一般',
+        'section_actions' => '動作',
+        'actions_explanation' => '依信任等級設定偵測到<b>封鎖</b>結果時的處理方式。<b>審查</b>結果一律會將「檢查」與「監控」使用者送交審核，而「信任但驗證」與「受信任」使用者則會自動核准。',
+        'sensitive_explanation' => '「檢查」使用者的<b>敏感</b>結果一律送交審核。對於其他信任等級，以下設定控制是否將照片所屬相簿標記為敏感，以及照片沒有相簿時的處理方式。',
+        'sensitive_album' => '敏感：相簿動作',
+        'sensitive_no_album' => '敏感：無相簿時的備用動作',
+        'section_hide_on_scan' => '掃描期間隱藏',
+        'hide_on_scan_explanation' => '依信任等級選擇是否在 NSFW 掃描進行期間暫時隱藏照片。這可避免可能有問題的內容在掃描完成前被看見。',
+        'hide_on_scan_warning' => '啟用後，照片會在 NSFW 掃描進行期間隱藏（放入審核佇列）。<br> 若 NSFW 分類器當機或無法使用，照片將持續隱藏，直到管理員手動核准為止。',
+        'hide_monitor' => '掃描期間隱藏「監控」使用者的照片',
+        'hide_tbv' => '掃描期間隱藏「信任但驗證」使用者的照片',
+        'hide_trusted' => '掃描期間隱藏「受信任」使用者的照片',
+        'section_matrix' => '信任等級 × 偵測結果矩陣',
+        'matrix_explanation' => '每張上傳的照片都會由 NSFW 分類器掃描，並回傳三種嚴重等級的結果：<b>封鎖</b>（露骨內容）、<b>審查</b>（可疑內容）與<b>敏感</b>（輕微內容）。對每項結果採取的動作取決於上傳者的信任等級。此表格彙整了目前的設定。',
+        'matrix_trust_level' => '信任等級',
+        'matrix_check' => '檢查',
+        'matrix_monitor' => '監控',
+        'matrix_tbv' => '信任但驗證',
+        'matrix_trusted' => '受信任',
+        'runtime_config' => '服務執行階段設定',
+        'presets' => '可用的預設組合',
+        'key' => '鍵',
+        'value' => '值',
+        'active' => '使用中',
+        'block' => '封鎖',
+        'review' => '審查',
+        'sensitive' => '敏感',
+        'none' => '無',
+        'matrix_moderate' => '審核',
+        'matrix_approve' => '核准',
+        'matrix_mark_album' => '標記相簿',
+        'matrix_nothing' => '不處理',
+        'legend_block' => '照片會被永久刪除。',
+        'legend_moderate' => '照片會暫留等待管理員審核。',
+        'legend_approve' => '照片會被接受，並記錄偵測結果。',
+        'legend_mark_album' => '照片所屬相簿會被標記為敏感。',
+        'legend_nothing' => '不採取任何動作。',
+    ],
+    'nsfw_findings' => [
+        'title' => 'NSFW 偵測結果',
+    ],
+];

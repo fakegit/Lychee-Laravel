@@ -1,0 +1,591 @@
+<template>
+	<LoadingProgress v-model:loading="isInitialLoading" />
+	<LoginModal v-if="!userStore.isLoggedIn" @logged-in="onLoggedIn" />
+	<WebauthnModal v-if="!userStore.isLoggedIn" @logged-in="onLoggedIn" />
+	<CameraCapture v-if="timelineStore.rootRights?.can_upload" key="camera_capture_modal" />
+
+	<!--
+		Outside `UContextMenu` on purpose (mirrors `AlbumPanel.vue`'s own placement of
+		`AlbumHeader` before its `UContextMenu`, not inside it) — a right-click context menu
+		over the header wasn't meaningful anyway (it only ever acted on selected photos).
+
+		The outer `sticky top-0 z-50` div is load-bearing, not decorative: `TimelineHeader`'s
+		own `UHeader` already computes `position: sticky; top: 0` on itself (confirmed via
+		devtools), yet still scrolled off-screen with the rest of the page. Empirically, a
+		`position: sticky` element that is a DIRECT DESCENDANT of `<Collapse>`'s rendered
+		wrapper div never sticks, regardless of that wrapper's own (entirely unremarkable)
+		computed style — moving the sticky element out of `Collapse` entirely, or (as here)
+		promoting the sticky positioning to a plain div that wraps `Collapse` from the
+		outside, both reliably fix it. `z-50` matches `UHeader`'s own default so it still
+		stacks above `TimelineDatesV3.vue`'s sidebar (`z-20`) and the grid's pinned date bar
+		(`z-10`).
+	-->
+	<div class="sticky top-0 z-50">
+		<Collapse :when="!is_full_screen">
+			<TimelineHeader v-if="userStore.isLoaded && timelineStore.rootConfig && timelineStore.rootRights" />
+		</Collapse>
+	</div>
+
+	<UContextMenu :items="menuSections" :disabled="photosStore.photos.length === 0" class="contents">
+		<!--
+			No `h-svh overflow-y-auto`/`id="scrollArea"` wrapper here (unlike the v7 fork this
+			was copied from): `PhotoGridVirtual.vue`'s `useWindowVirtualizer` tracks the real
+			`window`'s scroll position, so this page must let `window`/`document` scroll
+			directly - a nested scrolling div desyncs the virtualizer's visibility calc from
+			its own render offset, which hides rows (including the first) once the sync drifts.
+			`AlbumPanel.vue` (same virtualizer) already keeps this wrapper commented out for the
+			same reason.
+		-->
+		<div v-if="timelineStore.rootConfig && timelineStore.rootRights">
+			<!--
+				Flex row (mirrors AlbumPanel.vue's own `<div class="flex"><AlbumNavPanel/><div class="flex-1 ...">`):
+				`TimelineDatesV3.vue` used to be `position: fixed`, overlapping the rightmost photo
+				column. It's now a real flex sibling with its own reserved width, so the grid column
+				is genuinely narrower rather than rendering underneath it.
+			-->
+			<div class="flex">
+				<div class="flex-1 min-w-0">
+					<!-- Feature 066 (FR-066-15/NFR-066-06): virtualized grid sourced from
+					     `TimelineState.ts`'s v3 state. `UContainer` matches
+					     `PhotoThumbPanelVirtual.vue`'s own wrapping of this same component
+					     on the album path. -->
+					<UContainer v-if="layoutStore.config !== undefined" id="lychee_view_content" class="w-full border-0">
+						<PhotoGridVirtual
+							ref="photoGridRef"
+							source="timeline"
+							:selected-photos="selectedPhotosIds"
+							class="pt-4"
+							@clicked="photoClick"
+							@selected="selectPhoto"
+							@contexted="contextMenuPhotoOpen"
+							@active-bucket-changed="(id) => (activeBucketId = id)"
+							@timeline-layout-changed="(payload) => (timelineLayout = payload)"
+							@scroll-offset-changed="(offset) => (timelineScrollOffset = offset)"
+						/>
+					</UContainer>
+
+					<div class="flex justify-center" v-if="timelineStore.isLoading && !isTouchDevice()">
+						<LycheeLoadingIcon fast class="text-2xl" />
+					</div>
+				</div>
+				<TimelineDatesV3
+					:buckets="railBuckets"
+					:active-bucket-id="activeBucketId"
+					:bucket-layout="timelineLayout.buckets"
+					:total-height="timelineLayout.totalHeight"
+					:scroll-offset="timelineScrollOffset"
+					:lens-height="lycheeStore.timeline_lens_height"
+					:lens-falloff="lycheeStore.timeline_lens_falloff / 10"
+					:lens-magnification="lycheeStore.timeline_lens_magnification / 10"
+					v-if="!photoStore.isLoaded && railBuckets !== undefined"
+					@load="goToBucket"
+					@scrub="(px) => photoGridRef?.scrollToPixelOffset(px)"
+				/>
+			</div>
+
+			<!-- Photo panel -->
+			<PhotoPanel
+				v-if="photoStore.isLoaded"
+				:is-map-visible="false"
+				@toggle-slide-show="slideshow"
+				@rotate-overlay="rotateOverlay"
+				@rotate-photo-c-w="rotatePhotoCW"
+				@rotate-photo-c-c-w="rotatePhotoCCW"
+				@set-album-header="setAlbumHeader"
+				@toggle-highlight="toggleHighlight"
+				@toggle-move="toggleMove"
+				@toggle-delete="toggleDelete"
+				@go-back="goBack"
+				@next="() => next(true)"
+				@previous="() => previous(true)"
+			/>
+
+			<!-- Dialogs -->
+			<template v-if="photoStore.isLoaded">
+				<PhotoTagDialog
+					v-model:open="is_tag_visible"
+					:photo="photoStore.photo"
+					:parent-id="undefined"
+					@tagged="
+						() => {
+							unselect();
+							refresh();
+						}
+					"
+				/>
+				<PhotoCopyDialog
+					v-model:open="is_copy_visible"
+					:photo="photoStore.photo"
+					@copy="
+						() => {
+							unselect();
+							refresh();
+						}
+					"
+				/>
+				<MoveDialog :photo="photoStore.photo" v-model:open="is_move_visible" @moved="refresh" />
+				<DeleteDialog :photo="photoStore.photo" v-model:open="is_delete_visible" @deleted="refresh" />
+			</template>
+			<template v-else>
+				<!-- Dialogs -->
+				<PhotoTagDialog
+					v-model:open="is_tag_visible"
+					:parent-id="undefined"
+					:photo="selectedPhoto"
+					:photo-ids="selectedPhotosIds"
+					@tagged="refresh"
+				/>
+				<PhotoLicenseDialog
+					v-model:open="is_license_visible"
+					:parent-id="undefined"
+					:photo="selectedPhoto"
+					:photo-ids="selectedPhotosIds"
+					@licensed="refresh"
+				/>
+				<PhotoCopyDialog v-model:open="is_copy_visible" :photo="selectedPhoto" :photo-ids="selectedPhotosIds" @copy="refresh" />
+				<MoveDialog
+					v-model:open="is_move_visible"
+					:photo="selectedPhoto"
+					:photo-ids="selectedPhotosIds"
+					:album="undefined"
+					:album-ids="[]"
+					@moved="refresh"
+				/>
+				<DeleteDialog
+					v-model:open="is_delete_visible"
+					:photo="selectedPhoto"
+					:photo-ids="selectedPhotosIds"
+					:album="undefined"
+					:album-ids="[]"
+					@deleted="refresh"
+				/>
+				<RenameDialog v-model:open="is_rename_visible" :album="undefined" :photo="selectedPhoto" @updated="refresh" />
+			</template>
+			<DownloadAlbum v-model:open="is_download_photo_visible" :photo-ids="downloadPhotoIds" />
+			<GalleryFooter v-once />
+		</div>
+	</UContextMenu>
+</template>
+<script setup lang="ts">
+import { computed, provide } from "vue";
+import { MOTION_URL_LOADER } from "@/v8/composables/photo/motionUrlLoader";
+import { useUserStore } from "@/stores/UserState";
+import { ref } from "vue";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+import { storeToRefs } from "pinia";
+import { isTouchDevice, shouldIgnoreKeystroke } from "@/utils/keybindings-utils";
+import { useSelection } from "@/composables/selections/selections";
+import { useGalleryModals } from "@/composables/modalsTriggers/galleryModals";
+import { useAdvisoryModal } from "@/composables/modals/useAdvisoryModal";
+import { Collapse } from "vue-collapsed";
+import { useRoute, useRouter } from "vue-router";
+import GalleryFooter from "@/v8/components/footers/GalleryFooter.vue";
+import { useTogglablesStateStore } from "@/stores/ModalsState";
+import TimelineHeader from "@/v8/components/headers/TimelineHeader.vue";
+import CameraCapture from "@/v8/components/modals/CameraCapture.vue";
+import { onMounted } from "vue";
+import LycheeLoadingIcon from "@/v8/components/LycheeLoadingIcon.vue";
+import PhotoPanel from "@/v8/components/gallery/photoModule/PhotoPanel.vue";
+import LoadingProgress from "@/v8/components/loading/LoadingProgress.vue";
+import LoginModal from "@/v8/components/modals/LoginModal.vue";
+import WebauthnModal from "@/v8/components/modals/WebauthnModal.vue";
+import { watch } from "vue";
+import { usePhotoRoute } from "@/composables/photo/photoRoute";
+import { usePhotoActions } from "@/composables/album/photoActions";
+import { getNextPreviousPhoto } from "@/composables/photo/getNextPreviousPhoto";
+import { useSlideshowFunction } from "@/composables/photo/slideshow";
+import { useAppToast } from "@/v8/composables/useAppToast";
+import TimelineDatesV3 from "@/v8/components/gallery/timelineModule/TimelineDatesV3.vue";
+import { hourlyLensLabels } from "@/v8/utils/railTicks";
+import PhotoGridVirtual from "@/v8/components/gallery/albumModule/Virtualized/PhotoGridVirtual.vue";
+import PhotoTagDialog from "@/v8/components/forms/photo/PhotoTagDialog.vue";
+import PhotoLicenseDialog from "@/v8/components/forms/photo/PhotoLicenseDialog.vue";
+import PhotoCopyDialog from "@/v8/components/forms/photo/PhotoCopyDialog.vue";
+import MoveDialog from "@/v8/components/forms/gallery-dialogs/MoveDialog.vue";
+import DeleteDialog from "@/v8/components/forms/gallery-dialogs/DeleteDialog.vue";
+import { useContextMenu } from "@/v8/composables/contextMenus/contextMenu";
+import PhotoService from "@/services/photo-service";
+import AlbumService from "@/services/album-service";
+import ModerationService from "@/services/moderation-service";
+import { EmptyAlbumCallbacks } from "@/utils/Helpers";
+import { useMouseEvents } from "@/v8/composables/album/uploadEvents";
+import RenameDialog from "@/v8/components/forms/gallery-dialogs/RenameDialog.vue";
+import { useLtRorRtL } from "@/utils/Helpers";
+import { onUnmounted } from "vue";
+import { usePhotoStore } from "@/stores/PhotoState";
+import { usePhotosStore } from "@/stores/PhotosState";
+import { useLayoutStore } from "@/stores/LayoutState";
+import { useAlbumsStore } from "@/stores/AlbumsState";
+import { useTimelineStore } from "@/stores/TimelineState";
+import DownloadAlbum from "@/v8/components/modals/DownloadAlbum.vue";
+import { trans } from "laravel-vue-i18n";
+import type { ContextMenuItem } from "@nuxt/ui";
+import { definePanelShortcuts } from "@/v8/composables/usePanelShortcuts";
+
+const { isLTR } = useLtRorRtL();
+
+const props = defineProps<{
+	date?: string;
+	photoId?: string;
+}>();
+
+const toast = useAppToast();
+const route = useRoute();
+const router = useRouter();
+const { advisoryCheck } = useAdvisoryModal();
+const lycheeStore = useLycheeStateStore();
+const togglableStore = useTogglablesStateStore();
+const photoStore = usePhotoStore();
+const photosStore = usePhotosStore();
+const albumsStore = useAlbumsStore();
+const layoutStore = useLayoutStore();
+const userStore = useUserStore();
+const timelineStore = useTimelineStore();
+// Feature 100: thumbnails fetch their live photo video URL on hover.
+provide(MOTION_URL_LOADER, (ids) => timelineStore.loadPhotoDetailsV3(ids).then(() => undefined));
+
+// oxlint-disable-next-line vue/no-dupe-keys
+const { photoId } = storeToRefs(photoStore);
+
+lycheeStore.load();
+
+// unused? Hard to say...
+const videoElement = ref<HTMLVideoElement | null>(null);
+
+const { slideshow_timeout } = storeToRefs(lycheeStore);
+const {
+	is_full_screen,
+	is_login_open,
+	is_upload_visible,
+	list_upload_files,
+	upload_config,
+	is_slideshow_active,
+	is_photo_edit_open,
+	are_details_open,
+} = storeToRefs(togglableStore);
+
+const {
+	selectedPhoto,
+	selectedPhotos,
+	selectedPhotosIds,
+	photoSelect: selectPhoto,
+	unselect,
+} = useSelection(photosStore, albumsStore, togglableStore);
+
+const { photoRoute } = usePhotoRoute(router);
+
+const is_download_photo_visible = ref(false);
+const downloadPhotoIds = ref<string[]>([]);
+
+// Only true until the first `refresh()` (mount) completes - stays false afterwards so
+// pagination, date-jump navigation, login, and post-action refreshes never re-trigger the
+// full-screen `LoadingProgress` overlay (they still show `timelineStore.isLoading`'s inline spinners).
+const isInitialLoading = ref(true);
+
+/** Feature 094 (FR-094-08): the rail's lens and pill tell the hour on hour buckets; section headers keep the server labels. */
+const railBuckets = computed(() =>
+	timelineStore.bucketsV3 === undefined
+		? undefined
+		: hourlyLensLabels(timelineStore.bucketsV3, lycheeStore.date_scrubber_label_format, lycheeStore.date_scrubber_format_hour),
+);
+
+/** Bucket currently scrolled into view in `PhotoGridVirtual.vue` (its own `activeHeaderEntry`), forwarded to `TimelineDatesV3.vue` so the sidebar's highlighted entry tracks scrolling, not just `route.params.date` (which only changes on an explicit navigation/deep-link). */
+const activeBucketId = ref<string | null>(null);
+
+/** Template ref to `PhotoGridVirtual.vue`'s exposed `scrollToPixelOffset()` — the drag-scrub target `TimelineDatesV3.vue`'s `@scrub` drives. */
+const photoGridRef = ref<InstanceType<typeof PhotoGridVirtual> | null>(null);
+
+/** `PhotoGridVirtual.vue`'s `timelineLayoutChanged` payload (every bucket's real/placeholder pixel `{top,height}` + `totalHeight`), forwarded to `TimelineDatesV3.vue`'s rail for tick/playhead positioning and drag-scrub targeting. */
+const timelineLayout = ref<{ buckets: { bucketId: string; top: number; height: number }[]; totalHeight: number }>({ buckets: [], totalHeight: 0 });
+
+/** `PhotoGridVirtual.vue`'s continuous content-relative scroll offset, forwarded to `TimelineDatesV3.vue`'s playhead. */
+const timelineScrollOffset = ref(0);
+
+function photoClick(photoId: string, _e: MouseEvent) {
+	router.push(photoRoute(photoId));
+}
+
+const albumId = ref(undefined);
+const { toggleHighlight, rotatePhotoCCW, rotatePhotoCW, setAlbumHeader, rotateOverlay } = usePhotoActions(photoStore, albumId, toast, lycheeStore);
+
+const { getNext, getPrevious } = getNextPreviousPhoto(router, photoStore);
+const { slideshow, next, previous, stop } = useSlideshowFunction(1000, is_slideshow_active, slideshow_timeout, videoElement, getNext, getPrevious);
+
+/**
+ * `TimelineDatesV3.vue`'s own `@load` handler — just pushes the new `date`
+ * (bucket id) route param.
+ * `PhotoGridVirtual.vue`'s own `route.params.date` watcher (mounted, not
+ * torn down by this navigation) does the actual eager-load + scroll, so
+ * there's nothing else to do here (S-066-18).
+ */
+function goToBucket(bucketId: string): void {
+	router.push({ name: "timeline", params: { date: bucketId } });
+}
+
+function toggleDetails() {
+	is_photo_edit_open.value = false;
+	are_details_open.value = !are_details_open.value;
+}
+
+function goBack() {
+	if (is_slideshow_active.value) {
+		stop();
+	}
+
+	if (is_photo_edit_open.value === true) {
+		is_photo_edit_open.value = false;
+		return;
+	}
+
+	if (photoStore.photo !== undefined) {
+		// The route's own `date` (bucket id) param is already correct (set by
+		// `photoRoute()` when the photo was opened, or by the deep-link/side-rail
+		// navigation that landed here) — no need to re-derive it from
+		// `photo.timeline`, which `adaptPhotoTile()` never populates for a v3
+		// tile (see that file's own doc comment).
+		router.push({ name: "timeline", params: { date: route.params.date as string, photoId: undefined } });
+		photoStore.reset();
+		return;
+	}
+}
+
+async function onLoggedIn() {
+	await refresh();
+	advisoryCheck();
+}
+
+async function refresh() {
+	await timelineStore.load();
+	if (timelineStore.isTimelineEnabled !== true) {
+		// Bye.
+		router.push({ name: "gallery" });
+	}
+
+	// `timelineStore.load()` above (root config/rights/layout mode) is
+	// Timeline-root metadata, not photo listing. `loadV3()` fetches the photo
+	// listing — see `TimelineState.ts.loadV3()`'s own doc comment (buckets
+	// tier, optional deep-link resolution, first/target bucket window). No
+	// scroll here — `PhotoGridVirtual.vue`'s own mount hook does that once its
+	// own layout is known (a rendering concern, kept out of this view same as
+	// out of the store).
+	await Promise.allSettled([layoutStore.load(), userStore.load()]);
+	await timelineStore.loadV3(props.date, props.photoId);
+	// Opens the lightbox on the deep-linked photo (FR-066-13/UI-066-03) —
+	// `loadV3()` above already ensured the target bucket (hence this photo) is
+	// present in `photosStore.photos` before this runs. Unlike
+	// `Album.vue`/`Tag.vue`'s own equivalent initial-mount assignment, this
+	// view's watch on `route.params.photoId` further below only fires on a
+	// SUBSEQUENT change, never on first mount.
+	if (props.photoId !== undefined && props.photoId !== "") {
+		photoStore.photoId = props.photoId;
+		photoStore.load();
+	}
+	isInitialLoading.value = false;
+}
+
+onMounted(async () => {
+	await refresh();
+});
+
+// Modals for Albums
+const {
+	is_delete_visible,
+	toggleDelete,
+	is_move_visible,
+	toggleMove,
+	is_rename_visible,
+	toggleRename,
+	is_tag_visible,
+	toggleTag,
+	is_license_visible,
+	toggleLicense,
+	is_copy_visible,
+	toggleCopy,
+} = useGalleryModals(togglableStore);
+
+const photoCallbacks = {
+	star: () => {
+		PhotoService.highlight(selectedPhotosIds.value, true);
+		AlbumService.clearCache();
+		refresh();
+	},
+	unstar: () => {
+		PhotoService.highlight(selectedPhotosIds.value, false);
+		AlbumService.clearCache();
+		refresh();
+	},
+	setAsCover: () => {},
+	setAsHeader: () => {},
+	toggleTag: toggleTag,
+	toggleLicense: toggleLicense,
+	toggleRename: toggleRename,
+	toggleCopyTo: toggleCopy,
+	toggleMove: toggleMove,
+	toggleDelete: toggleDelete,
+	toggleDownload: () => {
+		downloadPhotoIds.value = [...selectedPhotosIds.value];
+		is_download_photo_visible.value = true;
+	},
+	toggleApplyRenamer: () => {},
+	toggleScanFaces: () => {},
+	toggleApprove: () => {
+		ModerationService.approve(selectedPhotosIds.value).then(() => {
+			selectedPhotosIds.value.forEach((photoId) => {
+				const photo = photosStore.photos.find((p) => p.id === photoId);
+				if (photo) {
+					photo.is_validated = true;
+				}
+			});
+		});
+	},
+};
+
+const { Menu } = useContextMenu(
+	{
+		selectedPhoto: selectedPhoto,
+		selectedPhotos: selectedPhotos,
+		selectedPhotosIds: selectedPhotosIds,
+	},
+	photoCallbacks,
+	EmptyAlbumCallbacks,
+);
+
+// See AlbumPanel.vue for why the composable's imperative photoMenuOpen is bypassed in favor of
+// a declarative UContextMenu wrapping the gallery view, and why `:disabled` above must not
+// depend on `Menu.length` (that races against the selection side-effect this handler
+// performs on the very same contextmenu event).
+function contextMenuPhotoOpen(photoId: string, _e: MouseEvent): void {
+	if (!selectedPhotosIds.value.includes(photoId)) {
+		selectedPhotosIds.value = [photoId];
+	}
+}
+
+const menuSections = computed<ContextMenuItem[][]>(() => {
+	const sections: ContextMenuItem[][] = [[]];
+	for (const entry of Menu.value) {
+		if (entry.is_divider) {
+			sections.push([]);
+			continue;
+		}
+		sections[sections.length - 1].push({
+			label: trans(entry.label ?? ""),
+			icon: entry.icon,
+			onSelect: entry.callback,
+		});
+	}
+	return sections.filter((s) => s.length > 0);
+});
+
+const can_upload = computed(() => timelineStore.rootRights?.can_upload === true && photoStore.isLoaded === false);
+const timeline_parent_id = ref<string | null>(null);
+const timeline_existing_albums = ref<{ id: string; title: string }[]>([]);
+const { onPaste, dragEnd, dropUpload } = useMouseEvents(
+	can_upload,
+	is_upload_visible,
+	list_upload_files,
+	timeline_parent_id,
+	timeline_existing_albums,
+	upload_config,
+);
+
+togglableStore.loadUploadConfig();
+window.addEventListener("paste", onPaste);
+window.addEventListener("dragover", dragEnd);
+window.addEventListener("drop", dropUpload);
+
+function cleanupEventListeners() {
+	window.removeEventListener("paste", onPaste);
+	window.removeEventListener("dragover", dragEnd);
+	window.removeEventListener("drop", dropUpload);
+}
+router.afterEach(cleanupEventListeners);
+onUnmounted(cleanupEventListeners);
+
+function openSearch() {
+	router.push({ name: "search" });
+}
+
+definePanelShortcuts({
+	l: () => !photoStore.isLoaded && !userStore.isLoggedIn && (is_login_open.value = true),
+	"/": () => !photoStore.isLoaded && timelineStore.rootConfig?.is_search_accessible && openSearch(),
+	f: () => togglableStore.toggleFullScreen(),
+	u: () => !photoStore.isLoaded && (is_upload_visible.value = true),
+
+	arrowleft: () => photoStore.isLoaded && (isLTR() ? photoStore.hasPrevious && previous(true) : photoStore.hasNext && next(true)),
+	arrowright: () => photoStore.isLoaded && (isLTR() ? photoStore.hasNext && next(true) : photoStore.hasPrevious && previous(true)),
+	o: () => photoStore.isLoaded && rotateOverlay(),
+	" ": () => photoStore.isLoaded && slideshow(),
+	i: () => photoStore.isLoaded && toggleDetails(),
+
+	delete: () => photoStore.isLoaded && toggleDelete(),
+	backspace: () => photoStore.isLoaded && toggleDelete(),
+
+	// on key stroke escape:
+	// 1. stop an active slideshow
+	// 2. lose focus
+	// 3. close modals
+	// 4. go back
+	escape: {
+		usingInput: true,
+		handler: () => {
+			if (photoStore.isLoaded && is_slideshow_active.value) {
+				stop();
+			}
+
+			// 2. lose focus
+			if (shouldIgnoreKeystroke() && document.activeElement instanceof HTMLElement) {
+				document.activeElement.blur();
+				return;
+			}
+
+			if (are_details_open.value) {
+				are_details_open.value = false;
+				return;
+			}
+
+			if (is_move_visible.value) {
+				is_move_visible.value = false;
+				return;
+			}
+
+			if (is_delete_visible.value) {
+				is_delete_visible.value = false;
+				return;
+			}
+
+			if (is_rename_visible.value) {
+				is_rename_visible.value = false;
+				return;
+			}
+
+			if (is_tag_visible.value) {
+				is_tag_visible.value = false;
+				return;
+			}
+
+			if (is_copy_visible.value) {
+				is_copy_visible.value = false;
+				return;
+			}
+
+			goBack();
+		},
+	},
+});
+
+watch(
+	() => route.params.photoId,
+	(newPhotoId, _) => {
+		unselect();
+
+		photoStore.setTransition(newPhotoId as string | undefined);
+
+		photoStore.photoId = newPhotoId as string;
+		photoStore.load();
+
+		if (photoId.value !== undefined) {
+			togglableStore.rememberScrollThumb(photoId.value);
+		}
+	},
+);
+</script>

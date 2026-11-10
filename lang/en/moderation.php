@@ -1,0 +1,57 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Moderation page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Moderation',
+    'description' => 'Review and approve photos uploaded by users with the "check" trust level before they become publicly visible.',
+    'approve_selected' => 'Approve Selected',
+    'delete_selected' => 'Delete Selected',
+    'selected' => 'selected',
+    'no_pending' => 'No photos are awaiting moderation.',
+    'approved' => 'Photos approved successfully.',
+    'col_thumbnail' => 'Thumbnail',
+    'col_title' => 'Title',
+    'col_owner' => 'Owner',
+    'col_album' => 'Album',
+    'col_uploaded' => 'Uploaded',
+    'col_nsfw' => 'NSFW',
+    'nsfw_review' => 'NSFW Review',
+    'overlay_confidence' => 'Confidence: :value%',
+    'overlay_area' => 'Area: :value',
+    'overlay_mode_all' => 'NSFW: All',
+    'overlay_mode_block' => 'NSFW: Block',
+    'overlay_mode_review' => 'NSFW: Review',
+    'overlay_mode_sensitive' => 'NSFW: Sensitive',
+    // Feature 089: moderation history and NSFW findings review.
+    'tab_pending' => 'Pending',
+    'tab_history' => 'History',
+    'no_history' => 'No moderation history.',
+    'col_photo' => 'Photo',
+    'col_event' => 'Event',
+    'col_by' => 'By',
+    'col_date' => 'Date',
+    'event_held' => 'Held',
+    'event_approved' => 'Approved',
+    'source_upload' => 'Upload',
+    'source_nsfw_scan' => 'NSFW scan',
+    'history_title' => 'Moderation',
+    'history_show_all' => 'Show all (:count)',
+    'findings_title' => 'NSFW findings',
+    'findings_description' => 'Review the NSFW findings and dismiss the wrong ones. Dismissed findings are deleted; a new scan can find them again.',
+    'findings_empty' => 'No NSFW findings.',
+    'findings_col_status' => 'Status',
+    'findings_col_findings' => 'Findings',
+    'findings_col_albums' => 'Albums',
+    'findings_hidden' => 'Hidden',
+    'findings_dismiss' => 'Dismiss',
+    'findings_dismiss_all' => 'Dismiss all findings of this photo',
+    'findings_dismiss_selected' => 'Dismiss selected',
+    'findings_confirm_header' => 'Dismiss findings',
+    'findings_confirm' => 'Dismiss all findings of :count photo(s)? They are deleted.',
+    'findings_dismissed' => 'Findings dismissed.',
+    'findings_error' => 'The NSFW findings could not be loaded or changed.',
+];

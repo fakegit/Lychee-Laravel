@@ -1,0 +1,55 @@
+import { type TogglablesStateStore } from "@/stores/ModalsState";
+import { type Ref } from "vue";
+
+export function useScrollable(toggleableStore: TogglablesStateStore, path: Ref<string | undefined>) {
+	function onScroll() {
+		if (path.value === undefined) {
+			return;
+		}
+
+		const e = document.getElementById("galleryView") as HTMLElement;
+		toggleableStore.rememberScrollPage(e, path.value);
+	}
+
+	async function setScroll(_v: void, iter = 0) {
+		if (path.value === undefined) {
+			return;
+		}
+
+		// Abort. We tried 10 times (waited 5s).
+		if (iter == 50) {
+			return;
+		}
+
+		const e = document.getElementById("galleryView");
+		if (e === null) {
+			setTimeout(() => setScroll(_v, iter + 1), 100);
+		} else {
+			if (!toggleableStore.scroll_photo_id) {
+				toggleableStore.recoverScrollPage(e, path.value);
+				return;
+			}
+
+			const thumbPhotoElement = document.querySelector(`[data-photo-id="${toggleableStore.scroll_photo_id}"]`) as HTMLElement | null;
+			if (!thumbPhotoElement) {
+				// The target thumbnail is not yet in the DOM (background-loaded page may
+				// still be rendering). Retry instead of falling back to the saved scroll
+				// position so that we scroll correctly once it appears.
+				setTimeout(() => setScroll(_v, iter + 1), 100);
+			} else {
+				toggleableStore.recoverAndResetScrollThumb(thumbPhotoElement);
+			}
+		}
+	}
+
+	function scrollToTop() {
+		const e = document.getElementById("galleryView") as HTMLElement;
+		e.scrollTop = 0;
+	}
+
+	return {
+		onScroll,
+		setScroll,
+		scrollToTop,
+	};
+}

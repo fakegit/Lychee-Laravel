@@ -1,38 +1,73 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\Actions\Albums;
 
-use App\Actions\Album\Extensions\LocationData;
-use App\Actions\Albums\Extensions\PublicIds;
-use App\Models\Configs;
+use App\Contracts\Exceptions\InternalLycheeException;
+use App\Enum\SizeVariantType;
+use App\Http\Resources\Collections\PositionDataResource;
 use App\Models\Photo;
+use App\Policies\AlbumPolicy;
+use App\Policies\PhotoQueryPolicy;
+use App\Repositories\ConfigManager;
+use Illuminate\Support\Facades\Auth;
 
 class PositionData
 {
-	use LocationData;
+	public function __construct(
+		protected PhotoQueryPolicy $photo_query_policy,
+		protected readonly ConfigManager $config_manager,
+	) {
+	}
 
 	/**
 	 * Given a list of albums, generate an array to be returned.
 	 *
-	 * @param Collection[Album] $albums
+	 * @return PositionDataResource
 	 *
-	 * @return array
+	 * @throws InternalLycheeException
 	 */
-	public function do()
+	public function do(): PositionDataResource
 	{
-		// caching to avoid further request
-		Configs::get();
+		$user = Auth::user();
+		$unlocked_album_ids = AlbumPolicy::getUnlockedAlbumIDs();
 
-		// Initialize return var
-		$return = [];
+		$photo_query = $this->photo_query_policy->applySearchabilityFilter(
+			query: Photo::query()
+				->with([
+					'statistics',
+					'size_variants' => function ($r): void {
+						// The web GUI only uses the small and thumb size
+						// variants to show photos on a map; so we can save
+						// hydrating the larger size variants
+						// this really helps, if you want to show thousands
+						// of photos on a map, as there are up to 7 size
+						// variants per photo
+						$r->whereBetween('type', [SizeVariantType::SMALL2X, SizeVariantType::THUMB]);
+					},
+					'palette',
+					'tags',
+					'rating',
+				])
+				->whereNotNull('latitude')
+				->whereNotNull('longitude'),
+			user: $user,
+			unlocked_album_ids: $unlocked_album_ids,
+			origin: null,
+			include_nsfw: !$this->config_manager->getValueAsBool('hide_nsfw_in_map')
+		);
 
-		$albumIDs = resolve(PublicIds::class)->getPublicAlbumsId();
-
-		$query = Photo::with('album')->whereIn('album_id', $albumIDs);
-
-		$full_photo = Configs::get_value('full_photo', '1') == '1';
-		$return['photos'] = $this->photosLocationData($query, $full_photo);
-
-		return $return;
+		return new PositionDataResource(
+			album_id: null,
+			title: null,
+			photos: $photo_query->get(),
+			track_url: null,
+			tracks: collect(),
+		);
 	}
 }

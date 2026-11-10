@@ -1,0 +1,90 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+return [
+    'title' => 'Adminisztrációs irányítópult',
+    'overview' => 'Áttekintés',
+    'tools' => 'Eszközök',
+    'tool_groups' => [
+        'core' => 'Admin',
+        'monitoring' => 'Felügyelet',
+        'extensions' => 'Bővítmények',
+    ],
+    'refresh' => 'Frissítés',
+    'metrics' => [
+        'photos_count' => 'Fényképek',
+        'albums_count' => 'Albumok',
+        'users_count' => 'Felhasználók',
+        'storage_bytes' => 'Felhasznált tárhely',
+        'queued_jobs' => 'Várakozó feladatok',
+        'failed_jobs_24h' => 'Sikertelen feladatok (24 óra)',
+        'last_successful_job_at' => 'Utolsó sikeres feladat',
+    ],
+    'errors' => [
+        'partial' => 'Néhány mérőszámot nem sikerült betölteni.',
+    ],
+    'security' => [
+        'title' => 'Biztonsági figyelmeztetések',
+        'description' => 'Az alábbi sebezhetőségek érintik a jelenlegi Lychee verzióját. Kérjük, frissítsen mielőbb.',
+        'no_cvss' => '(nincs CVSS pontszám)',
+    ],
+    'update' => [
+        'title' => 'Frissítési állapot',
+        'update_available' => 'Újabb verzió érhető el (jelenlegi: :current, legújabb: :latest).',
+        'git_update_available' => 'A telepítése :count committal le van maradva a master ágtól.',
+    ],
+    'nsfw_config' => [
+        'title' => 'NSFW-észlelés és moderálás',
+        'tab_settings' => 'Beállítások',
+        'tab_presets' => 'Előbeállítások',
+        'description' => 'Automatikus NSFW-tartalomészlelés beállítása a feltöltött fényképekhez. A fényképek vizsgálata aszinkron módon, a külső osztályozó szolgáltatáson keresztül történik.',
+        'enable' => 'NSFW-osztályozás engedélyezése',
+        'preset' => 'Észlelési előbeállítás',
+        'scan_trusted' => 'Megbízható felhasználók vizsgálata',
+        'section_general' => 'Általános',
+        'section_actions' => 'Műveletek',
+        'actions_explanation' => 'Állítsa be bizalmi szintenként, mi történjen <b>Blokkolás</b> találat észlelésekor. Az <b>Ellenőrzés</b> találatok a Check és Monitor felhasználóknál mindig moderálásra kerülnek, a Trust-but-verify és Trusted felhasználóknál pedig automatikusan jóváhagyásra kerülnek.',
+        'sensitive_explanation' => 'A Check felhasználók <b>Érzékeny</b> találatai mindig moderálásra kerülnek. A többi bizalmi szintnél az alábbi beállítások határozzák meg, hogy a fénykép albuma érzékenyként legyen-e megjelölve, és mi történjen, ha a fényképnek nincs albuma.',
+        'sensitive_album' => 'Érzékeny: album művelet',
+        'sensitive_no_album' => 'Érzékeny: tartalék album nélkül',
+        'section_hide_on_scan' => 'Elrejtés vizsgálat közben',
+        'hide_on_scan_explanation' => 'Válassza ki bizalmi szintenként, hogy a fényképek ideiglenesen rejtve legyenek-e az NSFW-vizsgálat ideje alatt. Ez megakadályozza, hogy a potenciálisan problémás tartalom látható legyen a vizsgálat befejezése előtt.',
+        'hide_on_scan_warning' => 'Ha engedélyezve van, a fényképek rejtve maradnak (moderálási sorba kerülnek), amíg az NSFW-vizsgálat folyamatban van.<br> Ha az NSFW-osztályozó összeomlik vagy nem érhető el, a fénykép rejtve marad, amíg egy adminisztrátor kézzel jóvá nem hagyja.',
+        'hide_monitor' => 'Monitor fényképek elrejtése vizsgálat közben',
+        'hide_tbv' => 'Trust-but-verify fényképek elrejtése vizsgálat közben',
+        'hide_trusted' => 'Trusted fényképek elrejtése vizsgálat közben',
+        'section_matrix' => 'Bizalmi szint × találat mátrix',
+        'matrix_explanation' => 'Minden feltöltött fényképet megvizsgál az NSFW-osztályozó, amely három súlyossági szinten ad vissza találatokat: <b>Blokkolás</b> (explicit tartalom), <b>Ellenőrzés</b> (kérdéses tartalom) és <b>Érzékeny</b> (enyhe tartalom). Az egyes találatokra adott művelet a feltöltő bizalmi szintjétől függ. Ez a táblázat összefoglalja a jelenlegi beállításokat.',
+        'matrix_trust_level' => 'Bizalmi szint',
+        'matrix_check' => 'Ellenőrzés',
+        'matrix_monitor' => 'Megfigyelés',
+        'matrix_tbv' => 'Bízz, de ellenőrizd',
+        'matrix_trusted' => 'Megbízható',
+        'runtime_config' => 'Szolgáltatás futásidejű konfigurációja',
+        'presets' => 'Elérhető előbeállítások',
+        'key' => 'Kulcs',
+        'value' => 'Érték',
+        'active' => 'Aktív',
+        'block' => 'Blokkolás',
+        'review' => 'Ellenőrzés',
+        'sensitive' => 'Érzékeny',
+        'none' => 'Nincs',
+        'matrix_moderate' => 'Moderálás',
+        'matrix_approve' => 'Jóváhagyás',
+        'matrix_mark_album' => 'Album megjelölése',
+        'matrix_nothing' => 'Semmi',
+        'legend_block' => 'A fénykép véglegesen törlődik.',
+        'legend_moderate' => 'A fénykép adminisztrátori ellenőrzésre vár.',
+        'legend_approve' => 'A fénykép elfogadásra kerül, a találat naplózódik.',
+        'legend_mark_album' => 'A fénykép albuma érzékenyként lesz megjelölve.',
+        'legend_nothing' => 'Nincs művelet.',
+    ],
+    'nsfw_findings' => [
+        'title' => 'NSFW-találatok',
+    ],
+];

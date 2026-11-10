@@ -1,0 +1,90 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+return [
+    'title' => 'Administratörspanel',
+    'overview' => 'Översikt',
+    'tools' => 'Verktyg',
+    'tool_groups' => [
+        'core' => 'Admin',
+        'monitoring' => 'Övervakning',
+        'extensions' => 'Tillägg',
+    ],
+    'refresh' => 'Uppdatera',
+    'metrics' => [
+        'photos_count' => 'Foton',
+        'albums_count' => 'Album',
+        'users_count' => 'Användare',
+        'storage_bytes' => 'Använt lagringsutrymme',
+        'queued_jobs' => 'Jobb i kö',
+        'failed_jobs_24h' => 'Misslyckade jobb (24 h)',
+        'last_successful_job_at' => 'Senaste lyckade jobb',
+    ],
+    'errors' => [
+        'partial' => 'Vissa mätvärden kunde inte läsas in.',
+    ],
+    'security' => [
+        'title' => 'Säkerhetsmeddelanden',
+        'description' => 'Följande sårbarheter påverkar din nuvarande Lychee-version. Uppdatera så snart som möjligt.',
+        'no_cvss' => '(inget CVSS-värde)',
+    ],
+    'update' => [
+        'title' => 'Uppdateringsstatus',
+        'update_available' => 'En nyare version finns tillgänglig (nuvarande: :current, senaste: :latest).',
+        'git_update_available' => 'Din installation ligger :count commits efter master.',
+    ],
+    'nsfw_config' => [
+        'title' => 'NSFW-identifiering och moderering',
+        'tab_settings' => 'Inställningar',
+        'tab_presets' => 'Förinställningar',
+        'description' => 'Konfigurera automatisk identifiering av NSFW-innehåll i uppladdade foton. Fotona skannas asynkront via den externa klassificeringstjänsten.',
+        'enable' => 'Aktivera NSFW-klassificering',
+        'preset' => 'Förinställning för identifiering',
+        'scan_trusted' => 'Skanna betrodda användare',
+        'section_general' => 'Allmänt',
+        'section_actions' => 'Åtgärder',
+        'actions_explanation' => 'Konfigurera vad som händer när ett <b>Blockera</b>-fynd upptäcks, per förtroendenivå. <b>Granska</b>-fynd skickar alltid användare med Kontrollera och Övervaka till moderering och godkänns automatiskt för användare med Lita men verifiera och Betrodd.',
+        'sensitive_explanation' => '<b>Känsligt</b>-fynd för användare med Kontrollera skickas alltid till moderering. För övriga förtroendenivåer styr följande inställningar om fotots album flaggas som känsligt och vad som händer när fotot saknar album.',
+        'sensitive_album' => 'Känsligt: åtgärd för album',
+        'sensitive_no_album' => 'Känsligt: reserv när album saknas',
+        'section_hide_on_scan' => 'Dölj under skanning',
+        'hide_on_scan_explanation' => 'Välj per förtroendenivå om foton ska döljas tillfälligt medan NSFW-skanningen pågår. Det förhindrar att potentiellt problematiskt innehåll syns innan skanningen är klar.',
+        'hide_on_scan_warning' => 'När detta är aktiverat döljs foton (placeras i modereringskön) medan NSFW-skanningen pågår.<br> Om NSFW-klassificeraren kraschar eller inte är tillgänglig förblir fotot dolt tills en administratör godkänner det manuellt.',
+        'hide_monitor' => 'Dölj foton från Övervaka under skanning',
+        'hide_tbv' => 'Dölj foton från Lita men verifiera under skanning',
+        'hide_trusted' => 'Dölj foton från Betrodd under skanning',
+        'section_matrix' => 'Matris förtroendenivå × fynd',
+        'matrix_explanation' => 'Varje uppladdat foto skannas av NSFW-klassificeraren, som returnerar fynd i tre allvarlighetsnivåer: <b>Blockera</b> (explicit innehåll), <b>Granska</b> (tveksamt innehåll) och <b>Känsligt</b> (milt innehåll). Vilken åtgärd som vidtas för varje fynd beror på uppladdarens förtroendenivå. Tabellen sammanfattar den aktuella konfigurationen.',
+        'matrix_trust_level' => 'Förtroendenivå',
+        'matrix_check' => 'Kontrollera',
+        'matrix_monitor' => 'Övervaka',
+        'matrix_tbv' => 'Lita men verifiera',
+        'matrix_trusted' => 'Betrodd',
+        'runtime_config' => 'Tjänstens körtidskonfiguration',
+        'presets' => 'Tillgängliga förinställningar',
+        'key' => 'Nyckel',
+        'value' => 'Värde',
+        'active' => 'Aktiv',
+        'block' => 'Blockera',
+        'review' => 'Granska',
+        'sensitive' => 'Känsligt',
+        'none' => 'Ingen',
+        'matrix_moderate' => 'Moderera',
+        'matrix_approve' => 'Godkänn',
+        'matrix_mark_album' => 'Markera album',
+        'matrix_nothing' => 'Inget',
+        'legend_block' => 'Fotot raderas permanent.',
+        'legend_moderate' => 'Fotot hålls kvar för granskning av administratör.',
+        'legend_approve' => 'Fotot godkänns, fyndet loggas.',
+        'legend_mark_album' => 'Fotots album flaggas som känsligt.',
+        'legend_nothing' => 'Ingen åtgärd vidtas.',
+    ],
+    'nsfw_findings' => [
+        'title' => 'NSFW-fynd',
+    ],
+];

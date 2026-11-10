@@ -1,37 +1,58 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\Exceptions\Handlers;
 
-use App\Redirections\ToInstall;
-use Illuminate\Database\QueryException as QueryException;
-use Illuminate\Http\Request;
-use Illuminate\Http\Response;
-use Throwable;
+use App\Contracts\Exceptions\Handlers\HttpExceptionHandler;
+use App\Http\Redirections\ToInstall;
+use Illuminate\Database\QueryException;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface as HttpException;
 
-class AccessDBDenied
+/**
+ * Class AccessDBDenied.
+ *
+ * If access to the DB is denied, we need to run the installation.
+ */
+class AccessDBDenied implements HttpExceptionHandler
 {
 	/**
-	 * Render an exception into an HTTP response.
-	 *
-	 * @param Request   $request
-	 * @param Throwable $exception
-	 *
-	 * @return bool
+	 * {@inheritDoc}
 	 */
-	public function check($request, Throwable $exception)
+	public function check(HttpException $e): bool
 	{
-		// encryption key does not exist, we need to run the installation
-		return $exception instanceof QueryException && (strpos($exception->getMessage(), 'Access denied') !== false);
+		do {
+			if ($e instanceof QueryException && str_contains($e->getMessage(), 'Access denied')) {
+				return true;
+			}
+			$e = $e->getPrevious();
+		} while ($e !== null);
+
+		return false;
 	}
 
 	/**
-	 * @return Response
+	 * {@inheritDoc}
 	 */
-	// @codeCoverageIgnoreStart
-	public function go()
+	public function renderHttpException(SymfonyResponse $default_response, HttpException $e): SymfonyResponse
 	{
-		return ToInstall::go();
-	}
+		try {
+			$redirect_response = ToInstall::go();
+			$content_type = $default_response->headers->get('Content-Type');
+			if ($content_type !== null && $content_type !== '') {
+				$redirect_response->headers->set('Content-Type', $content_type);
+				$content = $default_response->getContent();
+				$redirect_response->setContent($content !== false ? $content : null);
+			}
 
-	// @codeCoverageIgnoreEnd
+			return $redirect_response;
+		} catch (\Throwable) {
+			return $default_response;
+		}
+	}
 }

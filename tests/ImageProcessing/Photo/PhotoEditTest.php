@@ -1,0 +1,278 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+/**
+ * We don't care for unhandled exceptions in tests.
+ * It is the nature of a test to throw an exception.
+ * Without this suppression we had 100+ Linter warning in this file which
+ * don't help anything.
+ *
+ * @noinspection PhpDocMissingThrowsInspection
+ * @noinspection PhpUnhandledExceptionInspection
+ */
+
+namespace Tests\ImageProcessing\Photo;
+
+use App\Jobs\EmbedMetadataJob;
+use App\Models\Configs;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
+use Tests\Feature_v2\Base\BaseApiWithDataTest;
+
+class PhotoEditTest extends BaseApiWithDataTest
+{
+	public function testEditPhotoUnauthorizedForbiddenUnprocessable(): void
+	{
+		$response = $this->patchJson('Photo', []);
+		$this->assertUnprocessable($response);
+
+		$response = $this->patchJson('Photo', [
+			'photo_id' => $this->photo1->id,
+			'title' => 'new title',
+			'description' => 'new description',
+			'tags' => ['tag1'],
+			'license' => 'none',
+			'taken_at' => null,
+			'upload_date' => '2021-01-01',
+			'from_id' => $this->album1->id,
+		]);
+		$this->assertUnauthorized($response);
+
+		$response = $this->actingAs($this->userNoUpload)->patchJson('Photo::rename', [
+			'photo_id' => $this->photo1->id,
+			'title' => 'new title',
+			'description' => 'new description',
+			'tags' => ['tag1'],
+			'license' => 'none',
+			'taken_at' => null,
+			'upload_date' => '2021-01-01',
+			'from_id' => $this->album1->id,
+		]);
+		$this->assertForbidden($response);
+
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo', []);
+		$this->assertUnprocessable($response);
+	}
+
+	public function testEditPhotoAuthorizedOwner(): void
+	{
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo', [
+			'photo_id' => $this->photo1->id,
+			'title' => 'new title',
+			'description' => 'new description',
+			'tags' => ['tag1'],
+			'license' => 'none',
+			'taken_at' => null,
+			'upload_date' => '2021-01-01',
+			'from_id' => $this->album1->id,
+		]);
+		$this->assertOk($response);
+
+		$response = $this->actingAs($this->userMayUpload1)->getJsonWithData('Album::photos', ['album_id' => $this->album1->id]);
+		$this->assertOk($response);
+		$photo0 = $response->json('photos.0');
+		$idx = $photo0['id'] === $this->photo1->id ? 0 : 1;
+
+		$response->assertJsonPath('photos.' . $idx . '.id', $this->photo1->id);
+		$response->assertJsonPath('photos.' . $idx . '.title', 'new title');
+		$response->assertJsonPath('photos.' . $idx . '.description', 'new description');
+		$this->assertEquals(['tag1'], array_column($response->json('photos.' . $idx . '.tags'), 'name'));
+		$response->assertJsonPath('photos.' . $idx . '.license', 'none');
+		$response->assertJsonPath('photos.' . $idx . '.created_at', '2021-01-01T00:00:00+00:00');
+		$response->assertJsonPath('photos.' . $idx . '.precomputed.is_taken_at_modified', false);
+
+		// Test setting taken_at
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo', [
+			'photo_id' => $this->photo1->id,
+			'title' => 'new title',
+			'description' => 'new description',
+			'tags' => ['tag1'],
+			'license' => 'none',
+			'taken_at' => '2021-01-01T00:00:00+00:00',
+			'upload_date' => '2021-01-01',
+			'from_id' => $this->album1->id,
+		]);
+		$this->assertOk($response);
+
+		$response = $this->actingAs($this->userMayUpload1)->getJsonWithData('Album::photos', ['album_id' => $this->album1->id]);
+		$this->assertOk($response);
+
+		$photo0 = $response->json('photos.0');
+		$idx = $photo0['id'] === $this->photo1->id ? 0 : 1;
+		$response->assertJsonPath('photos.' . $idx . '.id', $this->photo1->id);
+		$response->assertJsonPath('photos.' . $idx . '.title', 'new title');
+		$response->assertJsonPath('photos.' . $idx . '.description', 'new description');
+		$this->assertEquals(['tag1'], array_column($response->json('photos.' . $idx . '.tags'), 'name'));
+		$response->assertJsonPath('photos.' . $idx . '.license', 'none');
+		$response->assertJsonPath('photos.' . $idx . '.created_at', '2021-01-01T00:00:00+00:00');
+		$response->assertJsonPath('photos.' . $idx . '.taken_at', '2021-01-01T00:00:00+00:00');
+		$response->assertJsonPath('photos.' . $idx . '.precomputed.is_taken_at_modified', true);
+
+		// Reset taken_at
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo', [
+			'photo_id' => $this->photo1->id,
+			'title' => 'new title',
+			'description' => 'new description',
+			'tags' => ['tag1'],
+			'license' => 'none',
+			'taken_at' => null,
+			'upload_date' => '2021-01-01',
+			'from_id' => $this->album1->id,
+		]);
+		$this->assertOk($response);
+
+		$response = $this->actingAs($this->userMayUpload1)->getJsonWithData('Album::photos', ['album_id' => $this->album1->id]);
+		$this->assertOk($response);
+
+		$photo0 = $response->json('photos.0');
+		$idx = $photo0['id'] === $this->photo1->id ? 0 : 1;
+		$response->assertJsonPath('photos.' . $idx . '.id', $this->photo1->id);
+		$response->assertJsonPath('photos.' . $idx . '.title', 'new title');
+		$response->assertJsonPath('photos.' . $idx . '.description', 'new description');
+		$this->assertEquals(['tag1'], array_column($response->json('photos.' . $idx . '.tags'), 'name'));
+		$response->assertJsonPath('photos.' . $idx . '.license', 'none');
+		$response->assertJsonPath('photos.' . $idx . '.created_at', '2021-01-01T00:00:00+00:00');
+		$response->assertJsonPath('photos.' . $idx . '.precomputed.is_taken_at_modified', false);
+	}
+
+	public function testEditPhotoAuthorizedOwnerNullTakenDate(): void
+	{
+		DB::table('photos')->where('id', $this->photo1->id)->update(
+			['taken_at' => null, 'initial_taken_at' => null, 'taken_at_orig_tz' => null, 'initial_taken_at_orig_tz' => null]);
+
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo', [
+			'photo_id' => $this->photo1->id,
+			'title' => 'new title',
+			'description' => 'new description',
+			'tags' => ['tag1'],
+			'license' => 'none',
+			'taken_at' => null,
+			'upload_date' => '2021-01-01',
+			'from_id' => $this->album1->id,
+		]);
+		$this->assertOk($response);
+
+		$response = $this->actingAs($this->userMayUpload1)->getJsonWithData('Album::photos', ['album_id' => $this->album1->id]);
+		$this->assertOk($response);
+		$photo0 = $response->json('photos.0');
+		$idx = $photo0['id'] === $this->photo1->id ? 0 : 1;
+
+		$response->assertJsonPath('photos.' . $idx . '.id', $this->photo1->id);
+		$response->assertJsonPath('photos.' . $idx . '.title', 'new title');
+		$response->assertJsonPath('photos.' . $idx . '.description', 'new description');
+		$this->assertEquals(['tag1'], array_column($response->json('photos.' . $idx . '.tags'), 'name'));
+		$response->assertJsonPath('photos.' . $idx . '.license', 'none');
+		$response->assertJsonPath('photos.' . $idx . '.created_at', '2021-01-01T00:00:00+00:00');
+		$response->assertJsonPath('photos.' . $idx . '.taken_at', null);
+		$response->assertJsonPath('photos.' . $idx . '.precomputed.is_taken_at_modified', false);
+
+		// Test setting taken_at
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo', [
+			'photo_id' => $this->photo1->id,
+			'title' => 'new title',
+			'description' => 'new description',
+			'tags' => ['tag1'],
+			'license' => 'none',
+			'taken_at' => '2021-01-01T00:00:00+00:00',
+			'upload_date' => '2021-01-01',
+			'from_id' => $this->album1->id,
+		]);
+		$this->assertOk($response);
+
+		$response = $this->actingAs($this->userMayUpload1)->getJsonWithData('Album::photos', ['album_id' => $this->album1->id]);
+		$this->assertOk($response);
+
+		$photo0 = $response->json('photos.0');
+		$idx = $photo0['id'] === $this->photo1->id ? 0 : 1;
+		$response->assertJsonPath('photos.' . $idx . '.id', $this->photo1->id);
+		$response->assertJsonPath('photos.' . $idx . '.title', 'new title');
+		$response->assertJsonPath('photos.' . $idx . '.description', 'new description');
+		$this->assertEquals(['tag1'], array_column($response->json('photos.' . $idx . '.tags'), 'name'));
+		$response->assertJsonPath('photos.' . $idx . '.license', 'none');
+		$response->assertJsonPath('photos.' . $idx . '.created_at', '2021-01-01T00:00:00+00:00');
+		$response->assertJsonPath('photos.' . $idx . '.taken_at', '2021-01-01T00:00:00+00:00');
+		$response->assertJsonPath('photos.' . $idx . '.precomputed.is_taken_at_modified', true);
+
+		// Reset taken_at
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo', [
+			'photo_id' => $this->photo1->id,
+			'title' => 'new title',
+			'description' => 'new description',
+			'tags' => ['tag1'],
+			'license' => 'none',
+			'taken_at' => null,
+			'upload_date' => '2021-01-01',
+			'from_id' => $this->album1->id,
+		]);
+		$this->assertOk($response);
+
+		$response = $this->actingAs($this->userMayUpload1)->getJsonWithData('Album::photos', ['album_id' => $this->album1->id]);
+		$this->assertOk($response);
+
+		$photo0 = $response->json('photos.0');
+		$idx = $photo0['id'] === $this->photo1->id ? 0 : 1;
+		$response->assertJsonPath('photos.' . $idx . '.id', $this->photo1->id);
+		$response->assertJsonPath('photos.' . $idx . '.title', 'new title');
+		$response->assertJsonPath('photos.' . $idx . '.description', 'new description');
+		$this->assertEquals(['tag1'], array_column($response->json('photos.' . $idx . '.tags'), 'name'));
+		$response->assertJsonPath('photos.' . $idx . '.license', 'none');
+		$response->assertJsonPath('photos.' . $idx . '.created_at', '2021-01-01T00:00:00+00:00');
+		$response->assertJsonPath('photos.' . $idx . '.taken_at', null);
+		$response->assertJsonPath('photos.' . $idx . '.precomputed.is_taken_at_modified', false);
+	}
+
+	/**
+	 * Feature 059 (NFR-059-02): with the config at its default (off), editing
+	 * a photo never dispatches EmbedMetadataJob.
+	 */
+	public function testEditPhotoDoesNotDispatchEmbedJobWhenConfigDisabled(): void
+	{
+		// Explicit, not relying on the migration default: config state is
+		// not transaction-rolled-back between tests in this suite.
+		Configs::set('embed_metadata_in_files_enabled', false);
+		Bus::fake([EmbedMetadataJob::class]);
+
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo', [
+			'photo_id' => $this->photo1->id,
+			'title' => 'embed test',
+			'description' => 'embed test',
+			'tags' => ['tag1'],
+			'license' => 'none',
+			'taken_at' => null,
+			'upload_date' => '2021-01-01',
+			'from_id' => $this->album1->id,
+		]);
+		$this->assertOk($response);
+
+		Bus::assertNotDispatched(EmbedMetadataJob::class);
+	}
+
+	/**
+	 * Feature 059 (FR-059-03): with the config enabled, editing title/
+	 * description dispatches EmbedMetadataJob for the photo.
+	 */
+	public function testEditPhotoDispatchesEmbedJobWhenConfigEnabled(): void
+	{
+		Configs::set('embed_metadata_in_files_enabled', true);
+		Bus::fake([EmbedMetadataJob::class]);
+
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo', [
+			'photo_id' => $this->photo1->id,
+			'title' => 'embed test',
+			'description' => 'embed test',
+			'tags' => ['tag1'],
+			'license' => 'none',
+			'taken_at' => null,
+			'upload_date' => '2021-01-01',
+			'from_id' => $this->album1->id,
+		]);
+		$this->assertOk($response);
+
+		Bus::assertDispatched(EmbedMetadataJob::class);
+	}
+}

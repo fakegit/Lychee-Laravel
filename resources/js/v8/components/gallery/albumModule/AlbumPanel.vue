@@ -1,0 +1,682 @@
+<template>
+	<BuyMeDialog />
+	<!-- <div class="h-svh overflow-y-hidden flex flex-col"> -->
+	<!-- Trick to avoid the scroll bar to appear on the right when switching to full screen -->
+	<AlbumHeader
+		v-if="albumStore.isLoaded && userStore.isLoaded"
+		@refresh="emits('refresh')"
+		@toggle-edit="emits('toggleEdit')"
+		@open-search="emits('openSearch')"
+		@go-back="emits('goBack')"
+		@show-selected="albumCallbacks.copyHighlighted()"
+		@open-context-menu="openContextMenuFromHeader"
+	/>
+	<UMain>
+		<div class="flex">
+			<AlbumNavPanel />
+			<div class="flex-1 flex-col min-w-0">
+				<template v-if="albumStore.album && albumStore.config && userStore.isLoaded">
+					<UContextMenu :items="menuSections" :disabled="noData" class="contents">
+						<div id="galleryView" class="relative flex flex-wrap content-start w-full justify-start select-none">
+							<SelectDrag :with-scroll="true" />
+							<AlbumEdit v-if="albumStore.rights?.can_edit" />
+							<div
+								v-if="noData"
+								class="flex w-full flex-col h-[calc(100svh-12rem)] items-center justify-center text-xl text-muted gap-8"
+							>
+								<span class="block">
+									{{ $t("gallery.album.no_results") }}
+								</span>
+								<UButton
+									v-if="albumStore.rights?.can_upload && albumStore.modelAlbum !== undefined"
+									color="warning"
+									variant="solid"
+									icon="lucide:upload"
+									@click="toggleUpload"
+									>{{ $t("gallery.album.upload") }}</UButton
+								>
+							</div>
+							<AlbumHero
+								v-if="!noData"
+								@open-sharing-modal="toggleShareAlbum"
+								@open-embed-code="toggleEmbedCode"
+								@open-statistics="toggleStatistics"
+								@toggle-slide-show="emits('toggleSlideShow')"
+								@scroll-to-pictures="albumCallbacks.scrollToPaginatorTop"
+								@toggle-apply-renamer="toggleApplyRenamer"
+								@toggle-watermark-confirm="toggleWatermarkConfirm"
+								@toggle-download-album="toggleDownloadAlbumFromHero"
+								@toggle-scan-faces="toggleScanFacesFromHero"
+							/>
+							<template v-if="is_se_enabled && userStore.isLoggedIn">
+								<AlbumStatistics
+									v-if="photosStore.photos.length > 0"
+									:key="`statistics_${albumStore.album?.id}`"
+									v-model:open="areStatisticsOpen"
+								/>
+							</template>
+							<div class="flex w-full">
+								<div class="flex flex-1 min-w-0 flex-wrap content-start justify-start">
+									<AlbumThumbPanelVirtual
+										v-if="albumsStore.albums.length > 0"
+										ref="albumPanelVirtualRef"
+										@scrubber-layout-changed="onAlbumScrubberLayout"
+										@scroll-offset-changed="onAlbumScrubberScroll"
+										:selected-albums="selectedAlbumsIds"
+										@clicked="albumSelect"
+										@selected="albumSelect"
+										@contexted="contextMenuAlbumOpen"
+									/>
+									<!-- Tag Filter -->
+									<PhotoThumbPanelVirtual
+										v-if="albumStore.isPhotoSoaActive && photosStore.photos.length > 0"
+										ref="photoPanelVirtualRef"
+										@scrubber-layout-changed="onPhotoScrubberLayout"
+										@scroll-offset-changed="onPhotoScrubberScroll"
+										header="gallery.album.header_photos"
+										:selected-photos="selectedPhotosIds"
+										@clicked="photoClick"
+										@selected="photoSelect"
+										@contexted="contextMenuPhotoOpen"
+										@toggle-buy-me="toggleBuyMe"
+									/>
+									<template v-else>
+										<PhotoThumbPanel
+											v-if="layoutStore.config && photosStore.photos.length > 0"
+											header="gallery.album.header_photos"
+											:photos="photosStore.filteredPhotos"
+											:photos-timeline="photosStore.filteredPhotosTimeline"
+											:selected-photos="selectedPhotosIds"
+											:is-timeline="albumStore.config.is_photo_timeline_enabled"
+											:with-control="true"
+											@clicked="photoClick"
+											@selected="photoSelect"
+											@contexted="contextMenuPhotoOpen"
+											@toggle-buy-me="toggleBuyMe"
+											ref="photoPanel"
+										/>
+										<!-- Pagination for photos: not applicable on the SoA path
+										     (tier 2 is whole-album-at-once, never paginated) -->
+										<Pagination
+											v-if="photosStore.photos.length > 0 && albumStore.hasPhotosPagination"
+											:mode="lycheeStore.photos_pagination_mode"
+											:loading="albumStore.photos_loading"
+											:has-more="albumStore.hasMorePhotos"
+											:current-page="albumStore.photos_current_page"
+											:last-page="albumStore.photos_last_page"
+											:per-page="albumStore.photos_per_page"
+											:total="albumStore.photos_total"
+											:remaining="albumStore.photosRemainingCount"
+											resource-type="photos"
+											@load-more="albumStore.loadMorePhotos()"
+											@go-to-page="goToPhotosPage"
+										/>
+									</template>
+								</div>
+								<!-- Feature 071: the Timeline's date scrubber rail, fed day-level entries derived from the single grid this album shows.
+							     Mounted beside the grids only (not the hero), so it scrolls in with them and then sticks under the header. -->
+								<TimelineDatesV3
+									v-if="isDateScrubberVisible && dateScrubberLayout !== null"
+									:buckets="dateScrubberBuckets"
+									:bucket-layout="dateScrubberLayout.entries"
+									:total-height="dateScrubberLayout.totalHeight"
+									:separator-tops="dateScrubberLayout.separatorTops"
+									:scroll-offset="activeScrollOffset"
+									:lens-height="lycheeStore.timeline_lens_height"
+									:lens-falloff="lycheeStore.timeline_lens_falloff / 10"
+									:lens-magnification="lycheeStore.timeline_lens_magnification / 10"
+									:count-label-key="dateScrubberSource === 'albums' ? 'gallery.album.date_scrubber.albums_count' : undefined"
+									@scrub="scrubDateScrubberTo"
+								/>
+							</div>
+						</div>
+					</UContextMenu>
+					<ShareAlbum :key="`share_modal_${albumStore.album.id}`" v-model:open="is_share_album_visible" :title="albumStore.album.title" />
+					<ApplyRenamerDialog
+						v-model:open="is_apply_renamer_visible"
+						:album-id="albumStore.album.id"
+						:photo-ids="selectedPhotosIds"
+						:album-ids="selectedAlbumsIds"
+						@applied="emits('refresh')"
+					/>
+					<WatermarkConfirmDialog
+						v-model:open="is_watermark_confirm_visible"
+						:album-id="albumStore.album.id"
+						@watermarked="emits('refresh')"
+					/>
+					<DownloadAlbum v-model:open="is_download_album_visible" :album-ids="downloadAlbumIds" />
+					<DownloadAlbum v-model:open="is_download_photo_visible" :photo-ids="downloadPhotoIds" :from-id="downloadFromId" />
+				</template>
+				<GalleryFooter v-if="albumStore.album" v-once context="album" />
+			</div>
+		</div>
+	</UMain>
+</template>
+<script setup lang="ts">
+import { computed, ref, ComponentPublicInstance, provide } from "vue";
+import { MOTION_URL_LOADER } from "@/v8/composables/photo/motionUrlLoader";
+import AlbumThumbPanelVirtual from "@/v8/components/gallery/albumModule/Virtualized/AlbumThumbPanelVirtual.vue";
+import PhotoThumbPanel from "@/v8/components/gallery/albumModule/PhotoThumbPanel.vue";
+import PhotoThumbPanelVirtual from "@/v8/components/gallery/albumModule/Virtualized/PhotoThumbPanelVirtual.vue";
+import ShareAlbum from "@/v8/components/modals/ShareAlbum.vue";
+import AlbumHero from "@/v8/components/gallery/albumModule/AlbumHero.vue";
+import AlbumEdit from "@/v8/components/drawers/AlbumEdit.vue";
+import AlbumHeader from "@/v8/components/headers/AlbumHeader.vue";
+import AlbumNavPanel from "@/v8/components/gallery/albumModule/AlbumNavPanel.vue";
+import TimelineDatesV3 from "@/v8/components/gallery/timelineModule/TimelineDatesV3.vue";
+import { useAlbumDateScrubberState } from "@/v8/composables/album/albumDateScrubberState";
+import { toRailBuckets, type DateScrubLayout } from "@/v8/utils/dateScrubber";
+import { hourlyLensLabels } from "@/v8/utils/railTicks";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+import { storeToRefs } from "pinia";
+import { useSelection } from "@/composables/selections/selections";
+import { useContextMenu } from "@/v8/composables/contextMenus/contextMenu";
+import PhotoService from "@/services/photo-service";
+import AlbumService from "@/services/album-service";
+import FaceDetectionService from "@/services/face-detection-service";
+import ModerationService from "@/services/moderation-service";
+import { useGalleryModals } from "@/composables/modalsTriggers/galleryModals";
+import GalleryFooter from "@/v8/components/footers/GalleryFooter.vue";
+import AlbumStatistics from "@/v8/components/drawers/AlbumStatistics.vue";
+import { useTogglablesStateStore } from "@/stores/ModalsState";
+import { usePhotoRoute } from "@/composables/photo/photoRoute";
+import { useRouter } from "vue-router";
+import SelectDrag from "@/v8/components/forms/album/SelectDrag.vue";
+import { useOrderManagementStore } from "@/stores/OrderManagement";
+import { useBuyMeActions } from "@/composables/album/buyMeActions";
+import { useAlbumStore } from "@/stores/AlbumState";
+import { usePhotosStore } from "@/stores/PhotosState";
+import { useAlbumsStore } from "@/stores/AlbumsState";
+import { useUserStore } from "@/stores/UserState";
+import { useLayoutStore } from "@/stores/LayoutState";
+import { useCatalogStore } from "@/stores/CatalogState";
+import BuyMeDialog from "@/v8/components/forms/gallery-dialogs/BuyMeDialog.vue";
+import ApplyRenamerDialog from "@/v8/components/forms/album/ApplyRenamerDialog.vue";
+import WatermarkConfirmDialog from "@/v8/components/forms/album/WatermarkConfirmDialog.vue";
+import DownloadAlbum from "@/v8/components/modals/DownloadAlbum.vue";
+import { useAppToast } from "@/v8/composables/useAppToast";
+import Pagination from "@/v8/components/pagination/Pagination.vue";
+import { trans } from "laravel-vue-i18n";
+import { isDetailPending } from "@/utils/photoView";
+import type { ContextMenuItem } from "@nuxt/ui";
+
+const router = useRouter();
+const toast = useAppToast();
+
+const props = defineProps<{
+	isPhotoOpen: boolean;
+}>();
+
+const userStore = useUserStore();
+const albumStore = useAlbumStore();
+// Feature 100: thumbnails fetch their live photo video URL on hover.
+provide(MOTION_URL_LOADER, (ids) => albumStore.loadPhotoDetails(ids).then(() => undefined));
+const photosStore = usePhotosStore();
+const catalogStore = useCatalogStore();
+const albumsStore = useAlbumsStore();
+const layoutStore = useLayoutStore();
+const togglableStore = useTogglablesStateStore();
+const lycheeStore = useLycheeStateStore();
+const orderManagement = useOrderManagementStore();
+
+if (!albumsStore.rootRights) {
+	albumsStore.loadRootRights();
+}
+
+const emits = defineEmits<{
+	refresh: [];
+	toggleEdit: [];
+	toggleSlideShow: [];
+	scrollToTop: [];
+	openSearch: [];
+	goBack: [];
+}>();
+
+const { is_se_enabled } = storeToRefs(lycheeStore);
+
+// --- Feature 071: album date scrubber ---
+
+const {
+	source: dateScrubberSource,
+	activeLayout: dateScrubberLayout,
+	activeScrollOffset,
+	isAvailable: isDateScrubberAvailable,
+	isHidden: isDateScrubberHidden,
+	resetLayouts: resetDateScrubberLayouts,
+	photoLayout,
+	albumLayout,
+	photoScrollOffset,
+	albumScrollOffset,
+} = useAlbumDateScrubberState();
+resetDateScrubberLayouts();
+
+const albumPanelVirtualRef = ref<InstanceType<typeof AlbumThumbPanelVirtual> | null>(null);
+const photoPanelVirtualRef = ref<InstanceType<typeof PhotoThumbPanelVirtual> | null>(null);
+
+const isDateScrubberVisible = computed(() => isDateScrubberAvailable.value && !isDateScrubberHidden.value && !props.isPhotoOpen);
+// Feature 094 (FR-094-10): hour runs get the hourly lens and pill labels of `/timeline`; day runs are returned unchanged.
+const dateScrubberBuckets = computed(() =>
+	hourlyLensLabels(
+		toRailBuckets(dateScrubberLayout.value?.entries ?? []),
+		lycheeStore.date_scrubber_label_format,
+		lycheeStore.date_scrubber_format_hour,
+	),
+);
+
+function onAlbumScrubberLayout(layout: DateScrubLayout): void {
+	albumLayout.value = layout;
+}
+function onPhotoScrubberLayout(layout: DateScrubLayout): void {
+	photoLayout.value = layout;
+}
+function onAlbumScrubberScroll(offset: number): void {
+	albumScrollOffset.value = offset;
+}
+function onPhotoScrubberScroll(offset: number): void {
+	photoScrollOffset.value = offset;
+}
+
+/** Drag-scrub and click-scrub — the grid stays exactly where the rail was pressed or released, never snapped to a section top, never a route push (FR-071-10). */
+function scrubDateScrubberTo(px: number): void {
+	if (dateScrubberSource.value === "albums") {
+		albumPanelVirtualRef.value?.scrollToPixelOffset(px);
+		return;
+	}
+	photoPanelVirtualRef.value?.scrollToPixelOffset(px);
+}
+
+const { is_download_album_visible } = storeToRefs(togglableStore);
+const noData = computed(() => {
+	return !albumStore.isLoading && albumsStore.albums.length === 0 && photosStore.photos.length === 0;
+});
+
+const {
+	is_share_album_visible,
+	toggleDelete,
+	toggleMergeAlbum,
+	toggleMove,
+	toggleRename,
+	toggleShareAlbum,
+	toggleEmbedCode,
+	toggleTag,
+	toggleLicense,
+	toggleCopy,
+	toggleUpload,
+	toggleApplyRenamer,
+	is_apply_renamer_visible,
+	toggleWatermarkConfirm,
+	is_watermark_confirm_visible,
+} = useGalleryModals(togglableStore);
+
+const { toggleBuyMe } = useBuyMeActions(albumStore, photosStore, orderManagement, catalogStore, toast);
+
+const { selectedPhoto, selectedAlbum, selectedPhotos, selectedAlbums, selectedPhotosIds, selectedAlbumsIds, photoSelect, albumSelect, unselect } =
+	useSelection(photosStore, albumsStore, togglableStore);
+
+const { photoRoute, getParentId } = usePhotoRoute(router);
+
+function photoClick(photoId: string, _e: MouseEvent) {
+	router.push(photoRoute(photoId));
+}
+
+function openContextMenuFromHeader(e: MouseEvent): void {
+	if (selectedPhotosIds.value.length > 0) {
+		contextMenuPhotoOpen(selectedPhotosIds.value[0], e);
+	} else if (selectedAlbumsIds.value.length > 0) {
+		contextMenuAlbumOpen(e, selectedAlbumsIds.value[0]);
+	}
+}
+
+function goToPhotosPage(page: number) {
+	albumStore.loadPhotos(page, false);
+}
+
+const areStatisticsOpen = ref(false);
+function toggleStatistics() {
+	if (is_se_enabled) {
+		areStatisticsOpen.value = !areStatisticsOpen.value;
+	}
+}
+
+const downloadAlbumIds = ref<string[]>([]);
+const is_download_photo_visible = ref(false);
+const downloadPhotoIds = ref<string[]>([]);
+const downloadFromId = ref<string | null>(null);
+
+function toggleDownloadAlbumFromHero() {
+	if (albumStore.album === undefined) return;
+	downloadAlbumIds.value = [albumStore.album.id];
+	is_download_album_visible.value = true;
+}
+
+function toggleScanFacesFromHero() {
+	if (albumStore.album === undefined) return;
+	FaceDetectionService.scanAlbum(albumStore.album.id)
+		.then(() => {
+			toast.add({
+				severity: "success",
+				summary: trans("toasts.success"),
+				detail: trans("people.scan_success"),
+				life: 3000,
+			});
+		})
+		.catch((e) => {
+			toast.add({
+				severity: "error",
+				summary: trans("toasts.error"),
+				detail: e.response?.data?.message || trans("toasts.error"),
+				life: 3000,
+			});
+		});
+}
+
+function toggleDownloadAlbumFromSelection() {
+	downloadAlbumIds.value = selectedAlbumsIds.value;
+	is_download_album_visible.value = true;
+}
+
+const photoCallbacks = {
+	star: () => {
+		PhotoService.highlight(selectedPhotosIds.value, true);
+		// Update the photos in the store immediately to reflect the change
+		selectedPhotosIds.value.forEach((photoId) => {
+			const photo = photosStore.photos.find((p) => p.id === photoId);
+			if (photo) {
+				photo.is_highlighted = true;
+			}
+		});
+		AlbumService.clearCache(albumStore.album?.id);
+	},
+	unstar: () => {
+		PhotoService.highlight(selectedPhotosIds.value, false);
+		// Update the photos in the store immediately to reflect the change
+		selectedPhotosIds.value.forEach((photoId) => {
+			const photo = photosStore.photos.find((p) => p.id === photoId);
+			if (photo) {
+				photo.is_highlighted = false;
+			}
+		});
+		AlbumService.clearCache(albumStore.album?.id);
+	},
+	setAsCover: () => {
+		if (albumStore.album === undefined) return;
+		PhotoService.setAsCover(selectedPhoto.value!.id, albumStore.album.id);
+		// Update the album's cover_id immediately to reflect the change (toggle behavior)
+		if (albumStore.modelAlbum !== undefined) {
+			albumStore.modelAlbum.cover_id = albumStore.modelAlbum.cover_id === selectedPhoto.value!.id ? null : selectedPhoto.value!.id;
+		}
+		if (albumStore.tagAlbum !== undefined) {
+			albumStore.tagAlbum.cover_id = albumStore.tagAlbum.cover_id === selectedPhoto.value!.id ? null : selectedPhoto.value!.id;
+		}
+		if (
+			albumStore.album !== undefined &&
+			"editable" in albumStore.album &&
+			albumStore.album.editable !== undefined &&
+			albumStore.album.editable !== null
+		) {
+			albumStore.album.editable.cover_id = albumStore.modelAlbum?.cover_id ?? albumStore.tagAlbum?.cover_id ?? null;
+		}
+		AlbumService.clearCache(albumStore.album.id);
+	},
+	setAsHeader: async () => {
+		const photo = selectedPhoto.value!;
+		// A struct-of-arrays tile has no size variants until its details load (Feature 105, FR-105-09).
+		if (isDetailPending(photo)) {
+			await albumStore.loadPhotoDetails([photo.id]);
+		}
+		if (albumStore.album === undefined) return;
+		PhotoService.setAsHeader(photo.id, albumStore.album.id, false);
+		// Update the album's header_id immediately to reflect the change (toggle behavior)
+		const isToggleOff = albumStore.modelAlbum?.header_id === photo.id;
+		if (albumStore.modelAlbum !== undefined) {
+			albumStore.modelAlbum.header_id = isToggleOff ? null : photo.id;
+			if (albumStore.modelAlbum.preFormattedData) {
+				albumStore.modelAlbum.preFormattedData.header_photo_focus = null;
+			}
+		}
+		if (
+			albumStore.album !== undefined &&
+			"editable" in albumStore.album &&
+			albumStore.album.editable !== undefined &&
+			albumStore.album.editable !== null
+		) {
+			albumStore.album.editable.header_id = isToggleOff ? null : photo.id;
+			albumStore.album.preFormattedData.header_photo_focus = null;
+		}
+		// Update the header image URL in the album's preFormattedData
+		if (albumStore.album.preFormattedData) {
+			// A photo header (or its toggle-off) always replaces the map header (Feature 086).
+			albumStore.album.preFormattedData.is_map_header = false;
+			if (isToggleOff) {
+				albumStore.album.preFormattedData.url = null;
+			} else {
+				// Use medium or small variant for the header image
+				const headerUrl = photo.size_variants.medium?.url ?? photo.size_variants.small?.url ?? null;
+				albumStore.album.preFormattedData.url = headerUrl;
+				albumStore.album.preFormattedData.header_photo_focus = null;
+			}
+		}
+		AlbumService.clearCache(albumStore.album.id);
+	},
+	// The tag/license dialogs can be opened against a multi-selection
+	// without ever going through the lightbox (unlike PhotoEdit.vue's
+	// drawer, which is only reachable once a photo is already open there —
+	// FR-065-13 already covers that path). `ratios`' own `tags` field is
+	// conditionally gated behind display settings unrelated to whether a
+	// photo actually has tags, so a SoA-sourced tile's `tags`/`license`
+	// fields can't be trusted as "no details fetched yet" here — fetch
+	// details for the current selection first (Q-065-05: no-op when
+	// `isPhotoSoaActive` is false).
+	toggleTag: () => {
+		if (albumStore.isPhotoSoaActive) {
+			void albumStore.loadPhotoDetails(selectedPhotosIds.value);
+		}
+		toggleTag();
+	},
+	toggleLicense: () => {
+		if (albumStore.isPhotoSoaActive) {
+			void albumStore.loadPhotoDetails(selectedPhotosIds.value);
+		}
+		toggleLicense();
+	},
+	toggleRename: toggleRename,
+	toggleCopyTo: toggleCopy,
+	toggleMove: toggleMove,
+	toggleDelete: toggleDelete,
+	toggleDownload: () => {
+		downloadPhotoIds.value = [...selectedPhotosIds.value];
+		downloadFromId.value = getParentId() ?? null;
+		is_download_photo_visible.value = true;
+	},
+	toggleApplyRenamer: toggleApplyRenamer,
+	toggleScanFaces: () => {
+		FaceDetectionService.scanPhotos(selectedPhotosIds.value)
+			.then(() => {
+				toast.add({
+					severity: "success",
+					summary: trans("toasts.success"),
+					detail: trans("people.scan_success"),
+					life: 3000,
+				});
+			})
+			.catch((e) => {
+				toast.add({
+					severity: "error",
+					summary: trans("toasts.error"),
+					detail: e.response?.data?.message || trans("toasts.error"),
+					life: 3000,
+				});
+			});
+	},
+	toggleApprove: () => {
+		ModerationService.approve(selectedPhotosIds.value).then(() => {
+			selectedPhotosIds.value.forEach((photoId) => {
+				const photo = photosStore.photos.find((p) => p.id === photoId);
+				if (photo) {
+					photo.is_validated = true;
+				}
+			});
+		});
+	},
+};
+
+function togglePin() {
+	if (!selectedAlbum.value) return;
+	if (!albumStore.album) return;
+
+	AlbumService.setPinned(selectedAlbum.value.id, !selectedAlbum.value.is_pinned).then(() => {
+		if (albumStore.album === undefined) return; // should not happen, but hey...
+
+		AlbumService.clearAlbums();
+		AlbumService.clearCache(albumStore.album.id);
+		emits("refresh");
+		unselect();
+	});
+}
+
+const albumCallbacks = {
+	setAsCover: () => {
+		if (albumStore.album === undefined) return;
+		if (selectedAlbum.value?.thumb?.id === undefined) return;
+		PhotoService.setAsCover(selectedAlbum.value!.thumb?.id, albumStore.album.id);
+		// Update the album's cover_id immediately to reflect the change (toggle behavior)
+		if (albumStore.modelAlbum !== undefined) {
+			albumStore.modelAlbum.cover_id =
+				albumStore.modelAlbum.cover_id === selectedAlbum.value!.thumb?.id ? null : selectedAlbum.value!.thumb?.id;
+		}
+		if (
+			albumStore.album !== undefined &&
+			"editable" in albumStore.album &&
+			albumStore.album.editable !== undefined &&
+			albumStore.album.editable !== null
+		) {
+			albumStore.album.editable.cover_id = albumStore.modelAlbum?.cover_id ?? null;
+		}
+		AlbumService.clearCache(albumStore.album.id);
+		emits("refresh");
+	},
+	toggleRename: toggleRename,
+	toggleMerge: toggleMergeAlbum,
+	toggleMove: toggleMove,
+	toggleDelete: toggleDelete,
+	toggleDownload: () => {
+		toggleDownloadAlbumFromSelection();
+	},
+	togglePin: togglePin,
+	toggleApplyRenamer: toggleApplyRenamer,
+	toggleScanFaces: () => {
+		if (albumStore.album === undefined) return;
+		FaceDetectionService.scanAlbum(selectedAlbum.value!.id)
+			.then(() => {
+				toast.add({
+					severity: "success",
+					summary: trans("toasts.success"),
+					detail: trans("people.scan_success"),
+					life: 3000,
+				});
+			})
+			.catch((e) => {
+				toast.add({
+					severity: "error",
+					summary: trans("toasts.error"),
+					detail: e.response?.data?.message || trans("toasts.error"),
+					life: 3000,
+				});
+			});
+	},
+	copyHighlighted: () => {
+		const highlighted = photosStore.photos.filter((p) => p.is_highlighted);
+		const selectedNames = highlighted
+			.map((p) => {
+				const dotIndex = p.title.lastIndexOf(".");
+				return dotIndex > 0 ? p.title.substring(0, dotIndex) : p.title;
+			})
+			.join(", ");
+		navigator.clipboard
+			.writeText(selectedNames)
+			.then(() =>
+				toast.add({
+					severity: "info",
+					summary: "Info",
+					detail: trans("dialogs.selected_images.names_copied") + ". " + selectedNames,
+					life: 3000,
+				}),
+			)
+			.catch(() =>
+				toast.add({
+					severity: "error",
+					summary: "Error",
+					detail: "Failed to copy to clipboard",
+					life: 3000,
+				}),
+			);
+	},
+	scrollToPaginatorTop: () => {
+		if (photoPanel.value) {
+			photoPanel.value.$el.scrollIntoView({ behavior: "smooth" });
+		}
+	},
+};
+
+const computedAlbum = computed(() => albumStore.album);
+const computedConfig = computed(() => albumStore.config);
+const photoPanel = ref<ComponentPublicInstance | null>(null);
+
+const { Menu } = useContextMenu(
+	{
+		config: computedConfig,
+		album: computedAlbum,
+		selectedPhoto: selectedPhoto,
+		selectedPhotos: selectedPhotos,
+		selectedPhotosIds: selectedPhotosIds,
+		selectedAlbum: selectedAlbum,
+		selectedAlbums: selectedAlbums,
+		selectedAlbumsIds: selectedAlbumsIds,
+	},
+	photoCallbacks,
+	albumCallbacks,
+);
+
+// The shared useContextMenu composable's photoMenuOpen/albumMenuOpen call an internal
+// `menu.value.show(e)` that assumes a PrimeVue <ContextMenu ref="menu"> instance exists.
+// In v8 the menu is opened declaratively by UContextMenu wrapping the gallery view, so we
+// replicate only the selection side-effects here and let the native contextmenu event bubble
+// up to UContextMenu's own trigger to open the menu.
+//
+// UContextMenu's `:disabled` is intentionally NOT `Menu.length === 0`: `Menu` only has
+// items once something is selected, and that selection is set by this very handler in
+// response to the same contextmenu event. Reka's ContextMenuTrigger reads its `disabled`
+// prop synchronously (before Vue can flush the reactive update from the line below), so
+// gating on `Menu.length` made right-click on a not-yet-selected photo/album silently
+// no-op forever. `noData` (no photos/albums to right-click on at all) is stable across
+// the click and doesn't race.
+function contextMenuPhotoOpen(photoId: string, _e: MouseEvent): void {
+	selectedAlbumsIds.value = [];
+	if (!selectedPhotosIds.value.includes(photoId)) {
+		selectedPhotosIds.value = [photoId];
+	}
+}
+
+function contextMenuAlbumOpen(_e: MouseEvent, albumId: string): void {
+	selectedPhotosIds.value = [];
+	if (!selectedAlbumsIds.value.includes(albumId)) {
+		selectedAlbumsIds.value = [albumId];
+	}
+}
+
+const menuSections = computed<ContextMenuItem[][]>(() => {
+	const sections: ContextMenuItem[][] = [[]];
+	for (const entry of Menu.value) {
+		if (entry.is_divider) {
+			sections.push([]);
+			continue;
+		}
+		sections[sections.length - 1].push({
+			label: trans(entry.label ?? ""),
+			icon: entry.icon,
+			onSelect: entry.callback,
+		});
+	}
+	return sections.filter((s) => s.length > 0);
+});
+</script>

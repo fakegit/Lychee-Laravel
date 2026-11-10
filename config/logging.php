@@ -1,9 +1,5 @@
 <?php
 
-use Monolog\Handler\NullHandler;
-use Monolog\Handler\StreamHandler;
-use Monolog\Handler\SyslogUdpHandler;
-
 return [
 	/*
 	|--------------------------------------------------------------------------
@@ -16,7 +12,23 @@ return [
 	|
 	*/
 
-	'default' => env('LOG_CHANNEL', 'stack'),
+	'default' => 'stack',
+
+	/*
+	|--------------------------------------------------------------------------
+	| Deprecations Log Channel
+	|--------------------------------------------------------------------------
+	|
+	| This option controls the log channel that should be used to log warnings
+	| regarding deprecated PHP and library features. This allows you to get
+	| your application ready for upcoming major versions of dependencies.
+	|
+	*/
+
+	'deprecations' => [
+		'channel' => env('LOG_DEPRECATIONS_CHANNEL', 'deprecations'),
+		'trace' => false,
+	],
 
 	/*
 	|--------------------------------------------------------------------------
@@ -36,67 +48,106 @@ return [
 	'channels' => [
 		'stack' => [
 			'driver' => 'stack',
-			'channels' => ['single'],
-			'ignore_exceptions' => false,
+			'channels' => [
+				// env('LOG_STDOUT', false) ? 'stdout_logging' : null,
+				'debug-daily',
+				'error',
+				'warning',
+				'notice',
+			],
 		],
 
-		'single' => [
-			'driver' => 'single',
-			'path' => storage_path('logs/laravel.log'),
-			'level' => 'debug',
-		],
+		// // NEW: Stdout for container logs
+		// 'stdout_logging' => [
+		// 	'driver' => 'monolog',
+		// 	'level' => env('LOG_LEVEL', 'debug'),
+		// 	'handler' => \Monolog\Handler\StreamHandler::class,
+		// 	'formatter' => \Monolog\Formatter\LineFormatter::class,
+		// 	'with' => [
+		// 		'stream' => 'php://stdout',
+		// 	],
+		// 	'processors' => [
+		// 		// Adds extra context
+		// 		\Monolog\Processor\WebProcessor::class,
+		// 		\Monolog\Processor\MemoryUsageProcessor::class,
+		// 	],
+		// ],
 
-		'daily' => [
+		// // Alternative: stderr for error-level logs
+		// 'stderr_logging' => [
+		// 	'driver' => 'monolog',
+		// 	'level' => 'error',
+		// 	'handler' => \Monolog\Handler\StreamHandler::class,
+		// 	'formatter' => \Monolog\Formatter\LineFormatter::class,
+		// 	'with' => [
+		// 		'stream' => 'php://stderr',
+		// 	],
+		// ],
+
+		// Whatever debug log is needed
+		// Mostly SQL requests
+		'debug-daily' => [
+			'path' => storage_path('logs/daily.log'),
 			'driver' => 'daily',
-			'path' => storage_path('logs/laravel.log'),
 			'level' => 'debug',
-			'days' => 14,
-		],
-
-		'slack' => [
-			'driver' => 'slack',
-			'url' => env('LOG_SLACK_WEBHOOK_URL'),
-			'username' => 'Laravel Log',
-			'emoji' => ':boom:',
-			'level' => 'critical',
-		],
-
-		'papertrail' => [
-			'driver' => 'monolog',
-			'level' => 'debug',
-			'handler' => SyslogUdpHandler::class,
-			'handler_with' => [
-				'host' => env('PAPERTRAIL_URL'),
-				'port' => env('PAPERTRAIL_PORT'),
+			'processors' => [
+				// Adds extra context
+				\Monolog\Processor\WebProcessor::class,
+				\Monolog\Processor\MemoryUsageProcessor::class,
 			],
 		],
 
-		'stderr' => [
-			'driver' => 'monolog',
-			'handler' => StreamHandler::class,
-			'formatter' => env('LOG_STDERR_FORMATTER'),
-			'with' => [
-				'stream' => 'php://stderr',
+		// Something went wrong
+		'error' => [
+			'path' => storage_path('logs/errors.log'),
+			'driver' => 'single',
+			'level' => 'error',
+			'bubble' => false,
+		],
+
+		// Something may have gone wrong
+		'warning' => [
+			'path' => storage_path('logs/warning.log'),
+			'driver' => 'single',
+			'level' => 'warning',
+			'bubble' => false,
+		],
+
+		// By the way...
+		'notice' => [
+			'path' => storage_path('logs/notice.log'),
+			'driver' => 'daily',
+			'level' => 'notice',
+		],
+
+		// Specific channel to check who is accessing Lychee
+		'login' => [
+			'path' => storage_path('logs/login.log'),
+			'driver' => 'single',
+			'level' => 'info',
+		],
+
+		'deprecations' => [
+			'driver' => 'single',
+			'path' => storage_path('logs/deprecations.log'),
+			'level' => 'debug',
+		],
+
+		// Specific channel for job logs (e.g., to debug queue issues)
+		'jobs' => [
+			'driver' => 'stack',
+			'channels' => [
+				'jobs-daily',
+				'error',
+				'warning',
 			],
 		],
 
-		'syslog' => [
-			'driver' => 'syslog',
+		// Specific channel for job logs (e.g., to debug queue issues)
+		'jobs-daily' => [
+			'driver' => 'daily',
+			'path' => storage_path('logs/jobs.log'),
 			'level' => 'debug',
-		],
-
-		'errorlog' => [
-			'driver' => 'errorlog',
-			'level' => 'debug',
-		],
-
-		'null' => [
-			'driver' => 'monolog',
-			'handler' => NullHandler::class,
-		],
-
-		'emergency' => [
-			'path' => storage_path('logs/laravel.log'),
 		],
 	],
 ];

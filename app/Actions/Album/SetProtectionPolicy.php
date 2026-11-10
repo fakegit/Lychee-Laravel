@@ -1,0 +1,97 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Actions\Album;
+
+use App\Events\AlbumSaved;
+use App\Events\PersonAlbumSaved;
+use App\Events\TagAlbumSaved;
+use App\Exceptions\Internal\FrameworkException;
+use App\Exceptions\InvalidPropertyException;
+use App\Exceptions\ModelDBException;
+use App\Http\Resources\Models\Utils\AlbumProtectionPolicy;
+use App\Models\AccessPermission;
+use App\Models\Album;
+use App\Models\Extensions\BaseAlbum;
+use App\Models\PersonAlbum;
+use App\Models\TagAlbum;
+use Illuminate\Support\Facades\Hash;
+
+/**
+ * Class SetProtectionPolicy.
+ */
+class SetProtectionPolicy
+{
+	/**
+	 * @return void
+	 *
+	 * @throws InvalidPropertyException
+	 * @throws ModelDBException
+	 * @throws FrameworkException
+	 */
+	public function do(BaseAlbum $album, AlbumProtectionPolicy $protection_policy, bool $shall_set_password, #[\SensitiveParameter] ?string $password): void
+	{
+		$is_nsfw_changed = $album->is_nsfw !== $protection_policy->is_nsfw;
+		$album->is_nsfw = $protection_policy->is_nsfw;
+		$album->save();
+		if ($album instanceof Album && $is_nsfw_changed) {
+			(new SyncRecursiveNsfw())->do();
+		}
+
+		$active_permissions = $album->public_permissions();
+		if (!$protection_policy->is_public) {
+			$active_permissions?->delete();
+
+			// Just dispatch if something changed.
+			$this->dispatchSaved($album);
+
+			return;
+		}
+
+		// Security attributes of the album itself independent of a particular user
+		$active_permissions ??= new AccessPermission();
+		$active_permissions->is_link_required = $protection_policy->is_link_required;
+		$active_permissions->grants_full_photo_access = $protection_policy->grants_full_photo_access;
+		$active_permissions->grants_download = $protection_policy->grants_download;
+		$active_permissions->grants_upload = $protection_policy->grants_upload;
+		$active_permissions->base_album_id = $album->get_id();
+
+		// Set password if provided
+		if ($shall_set_password) {
+			// password is provided => there is a change
+			if ($password !== null) {
+				// password is not null => we update the value with the hash
+				$active_permissions->password = Hash::make($password);
+			} else {
+				// we remove the password
+				$active_permissions->password = null;
+			}
+		}
+		$active_permissions->base_album_id = $album->get_id();
+		$active_permissions->save();
+
+		$this->dispatchSaved($album);
+	}
+
+	/**
+	 * Dispatches the type-appropriate "saved" event for the given album.
+	 *
+	 * `TagAlbum`/`PersonAlbum` (both also `BaseAlbum`, reachable via
+	 * `AlbumController::updateProtectionPolicy()`) have their own dedicated
+	 * events, since only a plain `Album` carries a `parent_id`.
+	 */
+	private function dispatchSaved(BaseAlbum $album): void
+	{
+		match (true) {
+			$album instanceof Album => AlbumSaved::dispatch([$album->id], [$album->parent_id]),
+			$album instanceof TagAlbum => TagAlbumSaved::dispatch([$album->id]),
+			$album instanceof PersonAlbum => PersonAlbumSaved::dispatch($album),
+			default => null,
+		};
+	}
+}

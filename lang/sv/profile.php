@@ -1,0 +1,91 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Profile page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Profil',
+    'login' => [
+        'header' => 'Profil',
+        'enter_current_password' => 'Ange ditt nuvarande lösenord:',
+        'current_password' => 'Nuvarande lösenord',
+        'credentials_update' => 'Dina inloggningsuppgifter ändras till följande:',
+        'username' => 'Användarnamn',
+        'change_password' => 'Byt lösenord',
+        'cancel_password_change' => 'Avbryt lösenordsbyte',
+        'new_password' => 'Nytt lösenord',
+        'confirm_new_password' => 'Bekräfta nytt lösenord',
+        'password_strength_info' => 'Lösenordsstyrkan är en uppskattning som görs med <a href="https://github.com/dropbox/zxcvbn" class="inline-block border-b border-info border-dashed" target="_blank" rel="noreferrer">zxcvbn-algoritmen</a>.',
+        'email_instruction' => 'Lägg till din e-postadress nedan för att få e-postaviseringar. Ta bort e-postadressen nedan om du inte längre vill få e-post.',
+        'email' => 'E-post',
+        'change' => 'Ändra inloggning',
+        'api_token' => 'API Token ...',
+        'missing_fields' => 'Fält saknas',
+        'ldap_managed' => 'Användarens inloggningsinformation hanteras av LDAP.',
+    ],
+    'register' => [
+        'username_exists' => 'Användarnamnet finns redan.',
+        'password_mismatch' => 'Lösenorden matchar inte.',
+        'signup' => 'Registrera dig',
+        'error' => 'Ett fel uppstod när ditt konto skulle registreras.',
+        'success' => 'Ditt konto har skapats.',
+    ],
+    'admin_setup' => [
+        'header' => 'Konfigurera ditt administratörskonto',
+        'welcome' => 'Välkommen till Lychee,<br>låt oss börja med att skapa ett administratörskonto.',
+        'submit' => 'Skapa administratörskonto',
+        'success' => 'Administratörskontot har skapats.',
+        'error' => 'Ett fel uppstod när administratörskontot skulle skapas.',
+        'already_exists' => 'Ett administratörskonto har redan konfigurerats.',
+    ],
+    'token' => [
+        'unavailable' => 'Du har redan visat denna token.',
+        'no_data' => 'Ingen API-token har genererats.',
+        'disable' => 'Inaktivera',
+        'disabled' => 'Token inaktiverad',
+        'warning' => 'Denna token kommer inte att visas igen. Kopiera den och förvara den på ett säkert ställe.',
+        'reset' => 'Återställ token',
+        'create' => 'Skapa en ny token',
+    ],
+    'oauth' => [
+        'header' => 'OAuth',
+        'header_not_available' => 'OAuth är inte tillgängligt',
+        'setup_env' => 'Konfigurera inloggningsuppgifterna i din .env',
+        'token_registered' => '%s-token registrerad.',
+        'setup' => 'Konfigurera %s',
+        'reset' => 'återställ',
+        'credential_deleted' => 'Inloggningsuppgiften har raderats!',
+    ],
+    'u2f' => [
+        'header' => 'Passkey/MFA/2FA',
+        'info' => 'Detta ger endast möjlighet att använda WebAuthn för autentisering i stället för användarnamn och lösenord.',
+        'empty' => 'Listan med inloggningsuppgifter är tom!',
+        'not_secure' => 'Miljön är inte säker. U2F är inte tillgängligt.',
+        'new' => 'Registrera ny enhet.',
+        'credential_deleted' => 'Inloggningsuppgiften har raderats!',
+        'credential_updated' => 'Inloggningsuppgiften har uppdaterats!',
+        'credential_registred' => 'Registreringen lyckades!',
+        '5_chars' => 'Minst 5 tecken.',
+    ],
+    'preferences' => [
+        'header' => 'Inställningar',
+        'save' => 'Spara inställning',
+        'reset' => 'Återställ',
+        'change_saved' => 'Inställningen har sparats!',
+    ],
+    'shared_albums' => [
+        'instruction' => 'Välj hur delade album (album från andra användare) visas i ditt galleri:',
+        'mode_default' => 'Använd serverns standard',
+        'mode_default_desc' => 'Ärv serverns standardläge för synlighet.',
+        'mode_show' => 'Visa i listan',
+        'mode_show_desc' => 'Delade album visas under dina egna album.',
+        'mode_separate' => 'Separata flikar',
+        'mode_separate_desc' => 'Visa album i separata flikar, "Mina album" och "Delade med mig".',
+        'mode_separate_shared_only' => 'Endast delade',
+        'mode_separate_shared_only_desc' => 'Separata flikar som endast visar direkt delade album (exkluderar offentliga album).',
+        'mode_hide' => 'Dölj',
+        'mode_hide_desc' => 'Visa inga delade album.',
+    ],
+];

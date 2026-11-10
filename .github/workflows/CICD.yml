@@ -1,0 +1,592 @@
+name: Integrate
+
+# Run this workflow every time a new commit pushed to your repository
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - '*'
+    paths-ignore:
+      - '**/*.md'
+  # No paths filter on pull requests: the required checks must report on every pull request,
+  # including Markdown-only ones (jobs that do not apply are skipped by the `changes` filters).
+  pull_request:
+  # Allow manually triggering the workflow.
+  workflow_dispatch:
+
+# Declare default permissions as read only.
+permissions: read-all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !contains(github.ref, 'master') && !startsWith(github.ref, 'refs/tags/') }} # Only cancel previous runs on non-master/non-tag branches.
+
+jobs:
+  changes:
+    name: 0️⃣ Detect changed files
+    runs-on: ubuntu-latest
+    outputs:
+      js: ${{ steps.filter.outputs.js }}
+      php: ${{ steps.filter.outputs.php }}
+      lang: ${{ steps.filter.outputs.lang }}
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Filter paths
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            js:
+              - 'resources/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig.json'
+              - 'vite.config.ts'
+              - 'vite.embed.config.ts'
+              - 'vite/**'
+              - 'e2e/**'
+              - 'playwright.config.ts'
+              - '.github/workflows/js_check.yml'
+              - 'scripts/generate-js-types.sh'
+            php:
+              - 'app/**/*.php'
+              - 'bootstrap/**/*.php'
+              - 'config/**/*.php'
+              - 'database/**/*.php'
+              - 'public/**/*.php'
+              - 'routes/**/*.php'
+              - 'tests/**/*.php'
+              - 'composer.json'
+              - 'composer.lock'
+              - '.github/workflows/php_tests.yml'
+              - 'phpstan.neon'
+              - 'phpstan-baseline.neon'
+              - 'phpstan/**'
+              - '.php-cs-fixer.php'
+              - 'phpunit.xml'
+              - 'phpunit.ci.xml'
+              - 'phpunit.pgsql.xml'
+            lang:
+              - 'lang/**'
+
+  # Always runs so that jobs depending on it are not skipped on non-tag refs; the check itself only fires on tags.
+  tag_version:
+    name: 0️⃣ Tag matches version.md
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        if: github.ref_type == 'tag'
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        if: github.ref_type == 'tag'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Tag v7.11.1 (or v7.11.1-rc) must match version.md containing 7.11.1.
+      - name: Compare tag with version.md
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          tag_version="${TAG#v}"
+          tag_version="${tag_version%%-*}"
+          file_version="$(tr -d '[:space:]' < version.md)"
+          if [ "$tag_version" != "$file_version" ]; then
+            echo "::error file=version.md::Tag ${TAG} does not match version.md (${file_version})."
+            exit 1
+          fi
+          echo "Tag ${TAG} matches version.md (${file_version})."
+
+  php_syntax_errors:
+    name: 0️⃣ PHP 8.4 - Syntax errors
+    runs-on: ubuntu-latest
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.php == 'true' || needs.changes.outputs.lang == 'true'
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Setup PHP Action
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: 8.4
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+
+      - name: Check source code for syntax errors
+        run: vendor/bin/parallel-lint --exclude .git --exclude vendor .
+
+  check_js:
+    name: 0️⃣ JS front-end
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.js == 'true'
+    uses: ./.github/workflows/js_check.yml
+
+  code_style_errors:
+    name: 1️⃣ PHP 8.4 - Code Style errors
+    runs-on: ubuntu-latest
+    needs:
+      - php_syntax_errors
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: 8.4
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+
+      - name: Check source code for code style errors
+        run: vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.php --verbose --diff --dry-run
+
+  phpstan:
+    name: 1️⃣ PHP 8.4 - PHPStan
+    runs-on: ubuntu-latest
+    needs:
+      - php_syntax_errors
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: 8.4
+          coverage: none
+
+      - name: Install Composer dependencies
+        uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+
+      - name: Run PHPStan
+        run: vendor/bin/phpstan analyze
+
+  license:
+    name: 1️⃣ PHP 8.4 - License Check
+    runs-on: ubuntu-latest
+    needs:
+      - php_syntax_errors
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: 8.4
+          coverage: none
+
+      - name: Install Composer dependencies
+        uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+
+      # We ban GPL-2.0-or-later, we don't want that viral thing in Lychee: We want to keep our MIT license.
+      - name: Run License Checker
+        run: vendor/bin/composer-license-checker check -b GPL-2.0-or-later -b GPL-2.0-only -b GPL-3.0-only -b GPL-3.0-or-later -b AGPL-1.0-only -b AGPL-1.0-or-later -b AGPL-3.0-only -b AGPL-3.0-or-later -b LGPL-2.0-only -b LGPL-2.0-or-later -b LGPL-2.1-only -b LGPL-2.1-or-later -b LGPL-3.0-only -b LGPL-3.0-or-later --no-dev
+
+  tests:
+    name: 1️⃣ PHP tests
+    needs:
+      - changes
+      - php_syntax_errors
+    if: github.event_name != 'pull_request' || needs.changes.outputs.php == 'true'
+    uses: ./.github/workflows/php_tests.yml
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # The required status check for the PHP tests. When `tests` is skipped (a pull request
+  # without PHP changes) its matrix jobs are never created, so requiring them blocks the merge.
+  # This job always runs: it passes when the tests passed, or were skipped because no PHP
+  # changed, and fails otherwise (including `tests` skipped after a failed prerequisite).
+  tests_result:
+    name: 1️⃣ PHP tests result
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - tests
+    if: always()
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Check PHP tests outcome
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          TESTS_RESULT: ${{ needs.tests.result }}
+          TESTS_EXPECTED: ${{ github.event_name != 'pull_request' || needs.changes.outputs.php == 'true' }}
+        run: |
+          echo "Detect changed files: ${CHANGES_RESULT}, PHP tests expected: ${TESTS_EXPECTED}, PHP tests: ${TESTS_RESULT}"
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::Changed-file detection did not succeed."
+            exit 1
+          fi
+          if [ "$TESTS_RESULT" = "success" ]; then
+            exit 0
+          fi
+          if [ "$TESTS_EXPECTED" = "false" ] && [ "$TESTS_RESULT" = "skipped" ]; then
+            echo "No PHP changes: PHP tests skipped."
+            exit 0
+          fi
+          echo "::error::PHP tests ended with '${TESTS_RESULT}'."
+          exit 1
+
+  lang:
+    name: 1️⃣ Lang files
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - php_syntax_errors
+    # We only run this on PR to avoid running it twice on push (once for PHP and once for Lang)
+    if: github.event_name == 'pull_request' && needs.changes.outputs.lang == 'true'
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: setup Databases
+        run: |
+          touch database/database.sqlite
+
+      - name: Setup PHP Action
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: 8.4
+          extensions: bcmath, curl, dom, gd, imagick, json, libxml, mbstring, pcntl, pdo, pdo_sqlite, sqlite3, zip
+          coverage: xdebug
+          tools: pecl, composer
+
+      - name: Install Composer dependencies
+        uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+
+      - name: copy Env
+        run: |
+          cp .github/workflows/.env.sqlite .env
+
+      - name: Generate secure key & Optimize application & Migrate
+        run: |
+          php artisan key:generate
+          php artisan optimize
+          php artisan migrate
+
+      - name: Apply Language tests
+        run: XDEBUG_MODE=coverage vendor/bin/phpunit --configuration phpunit.ci.xml --testsuite Unit --filter Lang
+
+  dist:
+    name: 2️⃣ PHP dist
+    needs:
+      - code_style_errors
+    uses: ./.github/workflows/php_dist.yml
+
+  docker_check:
+    name: 3️⃣ Dockerfile Lint ${{ matrix.suffix }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - telemetry: false
+            suffix: ''
+          - telemetry: true
+            suffix: '-telemetry'
+    if: always() && (needs.phpstan.result == 'success' || needs.phpstan.result == 'skipped') && (needs.check_js.result == 'success' || needs.check_js.result == 'skipped')
+    needs:
+      - phpstan
+      - check_js
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 #v4.4.1
+
+      - name: Docker Lint
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: ./Dockerfile
+          failure-threshold: warning
+
+      - name: Build Docker image locally
+        run: docker build --build-arg TELEMETRY=${{ matrix.telemetry }} -t lychee:local .
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: lychee:local
+          format: 'table'
+          exit-code: 1
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+  docker_build:
+    name:  4️⃣ Build Docker Image${{ matrix.suffix }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - telemetry: false
+            suffix: ''
+          - telemetry: true
+            suffix: '-telemetry'
+    if: >
+      (github.ref == 'refs/heads/master' && github.event_name == 'push') ||
+      (startsWith(github.ref, 'refs/tags/') && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch')
+    needs:
+      - tag_version
+      - docker_check
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker_build.yml
+    with:
+      dockerfile: Dockerfile
+      telemetry: ${{ matrix.telemetry }}
+      suffix: ${{ matrix.suffix }}
+      cache-scope: image-frankenphp${{ matrix.suffix }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  docker_legacy_check:
+    name: 3️⃣ Legacy Dockerfile Lint${{ matrix.suffix }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - telemetry: false
+            suffix: '-legacy'
+          - telemetry: true
+            suffix: '-legacy-telemetry'
+    if: always() && (needs.phpstan.result == 'success' || needs.phpstan.result == 'skipped') && (needs.check_js.result == 'success' || needs.check_js.result == 'skipped')
+    needs:
+      - phpstan
+      - check_js
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 #v4.4.1
+
+      - name: Docker Lint
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: ./Dockerfile-legacy
+          failure-threshold: warning
+
+      - name: Build Docker image locally
+        run: docker build -f Dockerfile-legacy --build-arg TELEMETRY=${{ matrix.telemetry }} -t lychee:local-legacy .
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: lychee:local-legacy
+          format: 'table'
+          exit-code: 1
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+  docker_legacy_build:
+    name:  4️⃣ Build Legacy Docker Image${{ matrix.suffix }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - telemetry: false
+            suffix: '-legacy'
+          - telemetry: true
+            suffix: '-legacy-telemetry'
+    if: >
+      (github.ref == 'refs/heads/master' && github.event_name == 'push') ||
+      (startsWith(github.ref, 'refs/tags/') && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch')
+    needs:
+      - tag_version
+      - docker_legacy_check
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker_build.yml
+    with:
+      dockerfile: Dockerfile-legacy
+      telemetry: ${{ matrix.telemetry }}
+      suffix: ${{ matrix.suffix }}
+      cache-scope: image${{ matrix.suffix }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  createArtifact:
+    name: 3️⃣ Build Artifact
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+    needs:
+      - tag_version
+      - phpstan
+      - dist
+      - tests
+      - check_js
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      extensions: bcmath, curl, dom, gd, imagick, json, libxml, mbstring, pcntl, pdo, pdo_sqlite, pdo_mysql, pdo_pgsql, pgsql, sqlite3, zip
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: 8.4
+          extensions: ${{ env.extensions }}
+          coverage: none
+
+      - name: Use Node.js 26
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+            node-version: 26
+
+      - name: Build Dist
+        run: |
+          make clean dist
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Lychee.zip
+          path: Lychee.zip
+          if-no-files-found: error # 'warn' or 'ignore' are also available, defaults to `warn`
+
+      - name: Attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          # Path to the artifact serving as the subject of the attestation. Must
+          # specify exactly one of "subject-path" or "subject-digest". May contain a
+          # glob pattern or list of paths (total subject count cannot exceed 2500).
+          subject-path: '${{ github.workspace }}/Lychee.zip'
+
+          # SHA256 digest of the subject for the attestation. Must be in the form
+          # "sha256:hex_digest" (e.g. "sha256:abc123..."). Must specify exactly one
+          # of "subject-path" or "subject-digest".
+          # subject-digest:
+
+          # Subject name as it should appear in the attestation. Required unless
+          # "subject-path" is specified, in which case it will be inferred from the
+          # path.
+          # subject-name: Lychee
+
+          # Whether to push the attestation to the image registry. Requires that the
+          # "subject-name" parameter specify the fully-qualified image name and that
+          # the "subject-digest" parameter be specified. Defaults to false.
+          # push-to-registry:
+
+          # Whether to attach a list of generated attestations to the workflow run
+          # summary page. Defaults to true.
+          # show-summary:
+
+          # The GitHub token used to make authenticated API requests. Default is
+          # ${{ github.token }}
+          github-token: ${{ github.token }}
+
+
+  release:
+    name: 4️⃣ Release
+    if: startsWith(github.ref, 'refs/tags/') && !endsWith(github.ref, '-rc')
+    needs:
+      - createArtifact
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      extensions: bcmath, curl, dom, gd, imagick, json, libxml, mbstring, pcntl, pdo, pdo_sqlite, pdo_mysql, pdo_pgsql, pgsql, sqlite3, zip
+
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+
+      - name: Download generated artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: Lychee.zip
+
+      # https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable
+      - name: Sign release with a key
+        run: |
+          cosign sign-blob --yes --key env://COSIGN_PRIVATE_KEY --bundle Lychee.zip.sigstore.json Lychee.zip
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+      - name: Create release
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          files: |
+            Lychee.zip.sigstore.json
+            Lychee.zip
+          token: ${{ secrets.GITHUB_TOKEN }}
+          generate_release_notes: true
+          make_latest: true

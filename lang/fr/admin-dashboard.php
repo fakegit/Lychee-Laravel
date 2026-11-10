@@ -1,0 +1,90 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+return [
+    'title' => 'Tableau de bord admin',
+    'overview' => 'Vue d’ensemble',
+    'tools' => 'Outils',
+    'tool_groups' => [
+        'core' => 'Administration',
+        'monitoring' => 'Surveillance',
+        'extensions' => 'Extensions',
+    ],
+    'refresh' => 'Actualiser',
+    'metrics' => [
+        'photos_count' => 'Photos',
+        'albums_count' => 'Albums',
+        'users_count' => 'Utilisateurs',
+        'storage_bytes' => 'Espace de stockage utilisé',
+        'queued_jobs' => 'Tâches en file d’attente',
+        'failed_jobs_24h' => 'Tâches échouées (24 h)',
+        'last_successful_job_at' => 'Dernière tâche réussie',
+    ],
+    'errors' => [
+        'partial' => 'Certaines métriques n’ont pas pu être chargées.',
+    ],
+    'security' => [
+        'title' => 'Alertes de sécurité',
+        'description' => 'Les vulnérabilités suivantes affectent votre version actuelle de Lychee. Merci de mettre à jour dès que possible.',
+        'no_cvss' => '(aucun score CVSS)',
+    ],
+    'update' => [
+        'title' => 'État de la mise à jour',
+        'update_available' => 'Une nouvelle version est disponible (actuelle : :current, dernière : :latest).',
+        'git_update_available' => 'Votre installation a :count commits de retard sur master.',
+    ],
+    'nsfw_config' => [
+        'title' => 'Détection NSFW et modération',
+        'tab_settings' => 'Paramètres',
+        'tab_presets' => 'Préréglages',
+        'description' => 'Configurez la détection automatique de contenu NSFW pour les photos téléversées. Les photos sont analysées de manière asynchrone via le service de classification externe.',
+        'enable' => 'Activer la classification NSFW',
+        'preset' => 'Préréglage de détection',
+        'scan_trusted' => 'Analyser les utilisateurs De confiance',
+        'section_general' => 'Général',
+        'section_actions' => 'Actions',
+        'actions_explanation' => 'Configurez ce qui se passe lorsqu’une constatation <b>Bloquer</b> est détectée, selon le niveau de confiance. Les constatations <b>Modérer</b> envoient toujours les utilisateurs Vérifier et Surveiller en modération et sont automatiquement approuvées pour les utilisateurs Confiance vérifiée et De confiance.',
+        'sensitive_explanation' => 'Les constatations <b>Sensible</b> pour les utilisateurs Vérifier sont toujours envoyées en modération. Pour les autres niveaux de confiance, les paramètres suivants déterminent si l’album de la photo est signalé comme sensible et ce qui se passe lorsque la photo n’a pas d’album.',
+        'sensitive_album' => 'Sensible : action sur l’album',
+        'sensitive_no_album' => 'Sensible : solution de repli sans album',
+        'section_hide_on_scan' => 'Masquer pendant l’analyse',
+        'hide_on_scan_explanation' => 'Choisissez, par niveau de confiance, si les photos doivent être temporairement masquées pendant l’analyse NSFW. Cela évite que du contenu potentiellement problématique soit visible avant la fin de l’analyse.',
+        'hide_on_scan_warning' => 'Lorsque cette option est activée, les photos sont masquées (placées dans la file de modération) pendant l’analyse NSFW.<br> Si le classificateur NSFW plante ou est indisponible, la photo restera masquée jusqu’à approbation manuelle par un administrateur.',
+        'hide_monitor' => 'Masquer les photos des utilisateurs Surveiller pendant l’analyse',
+        'hide_tbv' => 'Masquer les photos des utilisateurs Confiance vérifiée pendant l’analyse',
+        'hide_trusted' => 'Masquer les photos des utilisateurs De confiance pendant l’analyse',
+        'section_matrix' => 'Matrice niveau de confiance × constatation',
+        'matrix_explanation' => 'Chaque photo téléversée est analysée par le classificateur NSFW qui renvoie des constatations selon trois niveaux de gravité : <b>Bloquer</b> (contenu explicite), <b>Réviser</b> (contenu douteux) et <b>Sensible</b> (contenu léger). L’action prise pour chaque constatation dépend du niveau de confiance de l’auteur du téléversement. Ce tableau résume la configuration actuelle.',
+        'matrix_trust_level' => 'Niveau de confiance',
+        'matrix_check' => 'Vérifier',
+        'matrix_monitor' => 'Surveiller',
+        'matrix_tbv' => 'Confiance vérifiée',
+        'matrix_trusted' => 'De confiance',
+        'runtime_config' => 'Configuration d’exécution du service',
+        'presets' => 'Préréglages disponibles',
+        'key' => 'Clé',
+        'value' => 'Valeur',
+        'active' => 'Actif',
+        'block' => 'Bloquer',
+        'review' => 'Réviser',
+        'sensitive' => 'Sensible',
+        'none' => 'Aucune',
+        'matrix_moderate' => 'Modérer',
+        'matrix_approve' => 'Approuver',
+        'matrix_mark_album' => 'Marquer l’album',
+        'matrix_nothing' => 'Rien',
+        'legend_block' => 'La photo est définitivement supprimée.',
+        'legend_moderate' => 'La photo est mise en attente pour révision par un administrateur.',
+        'legend_approve' => 'La photo est acceptée, la constatation est enregistrée.',
+        'legend_mark_album' => 'L’album de la photo est signalé comme sensible.',
+        'legend_nothing' => 'Aucune action n’est effectuée.',
+    ],
+    'nsfw_findings' => [
+        'title' => 'Détections NSFW',
+    ],
+];

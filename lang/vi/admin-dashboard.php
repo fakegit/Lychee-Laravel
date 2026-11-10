@@ -1,0 +1,90 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+return [
+    'title' => 'Bảng điều khiển quản trị',
+    'overview' => 'Tổng quan',
+    'tools' => 'Công cụ',
+    'tool_groups' => [
+        'core' => 'Admin',
+        'monitoring' => 'Giám sát',
+        'extensions' => 'Tiện ích mở rộng',
+    ],
+    'refresh' => 'Làm mới',
+    'metrics' => [
+        'photos_count' => 'Ảnh',
+        'albums_count' => 'Album',
+        'users_count' => 'Người dùng',
+        'storage_bytes' => 'Dung lượng đã dùng',
+        'queued_jobs' => 'Tác vụ đang chờ',
+        'failed_jobs_24h' => 'Tác vụ thất bại (24h)',
+        'last_successful_job_at' => 'Tác vụ thành công gần nhất',
+    ],
+    'errors' => [
+        'partial' => 'Không thể tải một số chỉ số.',
+    ],
+    'security' => [
+        'title' => 'Cảnh báo bảo mật',
+        'description' => 'Các lỗ hổng sau ảnh hưởng đến phiên bản Lychee hiện tại của bạn. Vui lòng cập nhật sớm nhất có thể.',
+        'no_cvss' => '(không có điểm CVSS)',
+    ],
+    'update' => [
+        'title' => 'Trạng thái cập nhật',
+        'update_available' => 'Đã có phiên bản mới hơn (hiện tại: :current, mới nhất: :latest).',
+        'git_update_available' => 'Bản cài đặt của bạn chậm hơn master :count commit.',
+    ],
+    'nsfw_config' => [
+        'title' => 'Phát hiện & kiểm duyệt NSFW',
+        'tab_settings' => 'Cài đặt',
+        'tab_presets' => 'Cấu hình sẵn',
+        'description' => 'Cấu hình tự động phát hiện nội dung NSFW cho ảnh được tải lên. Ảnh được quét bất đồng bộ qua dịch vụ phân loại bên ngoài.',
+        'enable' => 'Bật phân loại NSFW',
+        'preset' => 'Cấu hình phát hiện',
+        'scan_trusted' => 'Quét người dùng tin cậy',
+        'section_general' => 'Chung',
+        'section_actions' => 'Hành động',
+        'actions_explanation' => 'Cấu hình điều xảy ra khi phát hiện kết quả <b>Chặn</b>, theo từng mức độ tin cậy. Kết quả <b>Xem xét</b> luôn đưa người dùng Kiểm tra và Giám sát vào hàng kiểm duyệt, và được tự động duyệt cho người dùng Tin nhưng xác minh và Tin cậy.',
+        'sensitive_explanation' => 'Kết quả <b>Nhạy cảm</b> của người dùng Kiểm tra luôn được đưa vào kiểm duyệt. Với các mức độ tin cậy khác, các cài đặt sau quyết định album của ảnh có bị đánh dấu nhạy cảm hay không và điều gì xảy ra khi ảnh không thuộc album nào.',
+        'sensitive_album' => 'Nhạy cảm: hành động với album',
+        'sensitive_no_album' => 'Nhạy cảm: phương án khi không có album',
+        'section_hide_on_scan' => 'Ẩn trong khi quét',
+        'hide_on_scan_explanation' => 'Chọn theo từng mức độ tin cậy xem ảnh có bị ẩn tạm thời trong khi quét NSFW hay không. Điều này ngăn nội dung có thể gây vấn đề hiển thị trước khi quét xong.',
+        'hide_on_scan_warning' => 'Khi bật, ảnh sẽ bị ẩn (đưa vào hàng kiểm duyệt) trong khi quét NSFW.<br> Nếu trình phân loại NSFW gặp sự cố hoặc không khả dụng, ảnh sẽ bị ẩn cho đến khi quản trị viên duyệt thủ công.',
+        'hide_monitor' => 'Ẩn ảnh của người dùng Giám sát trong khi quét',
+        'hide_tbv' => 'Ẩn ảnh của người dùng Tin nhưng xác minh trong khi quét',
+        'hide_trusted' => 'Ẩn ảnh của người dùng Tin cậy trong khi quét',
+        'section_matrix' => 'Ma trận mức tin cậy × kết quả',
+        'matrix_explanation' => 'Mỗi ảnh tải lên được trình phân loại NSFW quét và trả về kết quả theo ba mức độ nghiêm trọng: <b>Chặn</b> (nội dung khiêu dâm), <b>Xem xét</b> (nội dung đáng ngờ) và <b>Nhạy cảm</b> (nội dung nhẹ). Hành động áp dụng cho mỗi kết quả phụ thuộc vào mức độ tin cậy của người tải lên. Bảng này tóm tắt cấu hình hiện tại.',
+        'matrix_trust_level' => 'Mức độ tin cậy',
+        'matrix_check' => 'Kiểm tra',
+        'matrix_monitor' => 'Giám sát',
+        'matrix_tbv' => 'Tin nhưng xác minh',
+        'matrix_trusted' => 'Tin cậy',
+        'runtime_config' => 'Cấu hình thời gian chạy của dịch vụ',
+        'presets' => 'Cấu hình sẵn khả dụng',
+        'key' => 'Khóa',
+        'value' => 'Giá trị',
+        'active' => 'Đang dùng',
+        'block' => 'Chặn',
+        'review' => 'Xem xét',
+        'sensitive' => 'Nhạy cảm',
+        'none' => 'Không có',
+        'matrix_moderate' => 'Kiểm duyệt',
+        'matrix_approve' => 'Duyệt',
+        'matrix_mark_album' => 'Đánh dấu album',
+        'matrix_nothing' => 'Không làm gì',
+        'legend_block' => 'Ảnh bị xóa vĩnh viễn.',
+        'legend_moderate' => 'Ảnh bị giữ lại để quản trị viên xem xét.',
+        'legend_approve' => 'Ảnh được chấp nhận, kết quả được ghi nhật ký.',
+        'legend_mark_album' => 'Album của ảnh bị đánh dấu là nhạy cảm.',
+        'legend_nothing' => 'Không thực hiện hành động nào.',
+    ],
+    'nsfw_findings' => [
+        'title' => 'Kết quả NSFW',
+    ],
+];

@@ -17,7 +17,7 @@ return [
 	|
 	*/
 
-	'default' => env('CACHE_DRIVER', 'file'),
+	'default' => env('CACHE_STORE', env('CACHE_DRIVER', 'file')),
 
 	/*
 	|--------------------------------------------------------------------------
@@ -27,6 +27,9 @@ return [
 	| Here you may define all of the cache "stores" for your application as
 	| well as their drivers. You may even define multiple stores for the
 	| same cache driver to group types of items stored in your caches.
+	|
+	| Supported drivers: "apc", "array", "database", "file",
+	|         "memcached", "redis", "dynamodb", "octane", "null"
 	|
 	*/
 
@@ -43,12 +46,13 @@ return [
 		'database' => [
 			'driver' => 'database',
 			'table' => 'cache',
-			'connection' => null,
+			'connection' => env('DB_CONNECTION'),
+			'lock_connection' => null,
 		],
 
 		'file' => [
 			'driver' => 'file',
-			'path' => storage_path('framework/cache/data'),
+			'path' => env('CACHE_FILE_PATH', storage_path('framework/cache/data')),
 		],
 
 		'memcached' => [
@@ -57,9 +61,6 @@ return [
 			'sasl' => [
 				env('MEMCACHED_USERNAME'),
 				env('MEMCACHED_PASSWORD'),
-			],
-			'options' => [
-				// Memcached::OPT_CONNECT_TIMEOUT => 2000,
 			],
 			'servers' => [
 				[
@@ -73,6 +74,7 @@ return [
 		'redis' => [
 			'driver' => 'redis',
 			'connection' => 'cache',
+			'lock_connection' => 'default',
 		],
 
 		'dynamodb' => [
@@ -82,6 +84,10 @@ return [
 			'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
 			'table' => env('DYNAMODB_CACHE_TABLE', 'cache'),
 			'endpoint' => env('DYNAMODB_ENDPOINT'),
+		],
+
+		'octane' => [
+			'driver' => 'octane',
 		],
 	],
 
@@ -96,8 +102,5 @@ return [
 	|
 	*/
 
-	'prefix' => env(
-		'CACHE_PREFIX',
-		Str::slug(env('APP_NAME', 'laravel'), '_') . '_cache'
-	),
+	'prefix' => env('CACHE_PREFIX', Str::slug((string) env('APP_NAME', 'Lychee'), '_') . '_cache_'),
 ];

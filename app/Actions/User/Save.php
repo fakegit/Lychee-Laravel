@@ -1,26 +1,77 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\Actions\User;
 
-use App\Exceptions\JsonError;
+use App\Enum\UserUploadTrustLevel;
+use App\Exceptions\ConflictingPropertyException;
+use App\Exceptions\InvalidPropertyException;
+use App\Exceptions\ModelDBException;
 use App\Models\User;
+use App\Repositories\ConfigManager;
+use Illuminate\Support\Facades\Hash;
 
 class Save
 {
-	public function do(User $user, array $data): bool
-	{
-		if (User::where('username', '=', $data['username'])->where('id', '!=', $data['id'])->count()) {
-			throw new JsonError('username must be unique');
+	public function __construct(
+		protected readonly ConfigManager $config_manager,
+		protected readonly AssertIdentifierIsUnambiguous $assert_identifier_is_unambiguous,
+	) {
+	}
+
+	/**
+	 * @param User        $user
+	 * @param string      $username
+	 * @param string|null $password              see {@link HasPasswordTrait::password()} for the difference between the values `''` and `null`
+	 * @param bool        $may_upload
+	 * @param bool        $may_edit_own_settings
+	 *
+	 * @return void
+	 *
+	 * @throws InvalidPropertyException
+	 * @throws ModelDBException
+	 */
+	public function do(User $user,
+		string $username,
+		#[\SensitiveParameter] ?string $password,
+		bool $may_upload,
+		bool $may_edit_own_settings,
+		bool $may_administrate = false,
+		?int $quota_kb = null,
+		?string $note = null,
+		?UserUploadTrustLevel $upload_trust_level = null,
+	): void {
+		if (User::query()
+			->where('username', '=', $username)
+			->where('id', '!=', $user->id)
+			->count() !== 0
+		) {
+			throw new ConflictingPropertyException('Username already exists');
+		}
+		$this->assert_identifier_is_unambiguous->username($username, $user->id);
+
+		if ($quota_kb === 0) {
+			$default_bytes = $this->config_manager->getValueAsByteSize('default_user_quota');
+			$quota_kb = $default_bytes === 0 ? null : max(1, intdiv($default_bytes, 1024));
 		}
 
-		// check for duplicate name here !
-		$user->username = $data['username'];
-		$user->upload = ($data['upload'] == '1');
-		$user->lock = ($data['lock'] == '1');
-		if (isset($data['password'])) {
-			$user->password = bcrypt($data['password']);
+		$user->username = $username;
+		$user->may_upload = $may_upload;
+		$user->may_edit_own_settings = $may_edit_own_settings;
+		$user->may_administrate = $may_administrate;
+		$user->note = $note;
+		$user->quota_kb = $quota_kb;
+		if ($upload_trust_level !== null) {
+			$user->upload_trust_level = $upload_trust_level;
 		}
-
-		return $user->save();
+		if ($password !== null && $password !== '') {
+			$user->password = Hash::make($password);
+		}
+		$user->save();
 	}
 }

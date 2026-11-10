@@ -1,0 +1,90 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+return [
+    'title' => '管理ダッシュボード',
+    'overview' => '概要',
+    'tools' => 'ツール',
+    'tool_groups' => [
+        'core' => 'Admin',
+        'monitoring' => '監視',
+        'extensions' => '拡張機能',
+    ],
+    'refresh' => '更新',
+    'metrics' => [
+        'photos_count' => '写真',
+        'albums_count' => 'アルバム',
+        'users_count' => 'ユーザー',
+        'storage_bytes' => '使用ストレージ',
+        'queued_jobs' => '待機中のジョブ',
+        'failed_jobs_24h' => '失敗したジョブ (24時間)',
+        'last_successful_job_at' => '最後に成功したジョブ',
+    ],
+    'errors' => [
+        'partial' => '一部の指標を読み込めませんでした。',
+    ],
+    'security' => [
+        'title' => 'セキュリティ勧告',
+        'description' => '以下の脆弱性が現在の Lychee バージョンに影響します。できるだけ早く更新してください。',
+        'no_cvss' => '(CVSS スコアなし)',
+    ],
+    'update' => [
+        'title' => '更新状況',
+        'update_available' => '新しいバージョンが利用可能です（現在: :current、最新: :latest）。',
+        'git_update_available' => 'このインストールは master から :count コミット遅れています。',
+    ],
+    'nsfw_config' => [
+        'title' => 'NSFW 検出とモデレーション',
+        'tab_settings' => '設定',
+        'tab_presets' => 'プリセット',
+        'description' => 'アップロードされた写真に対する NSFW コンテンツの自動検出を設定します。写真は外部の分類サービスによって非同期でスキャンされます。',
+        'enable' => 'NSFW 分類を有効にする',
+        'preset' => '検出プリセット',
+        'scan_trusted' => '信頼済みユーザーもスキャン',
+        'section_general' => '一般',
+        'section_actions' => 'アクション',
+        'actions_explanation' => '<b>ブロック</b>の検出結果が見つかったときの動作を信頼レベルごとに設定します。<b>要確認</b>の検出結果は、チェックおよび監視ユーザーの場合は常にモデレーションに送られ、信頼・要確認および信頼済みユーザーの場合は自動的に承認されます。',
+        'sensitive_explanation' => 'チェックユーザーの<b>センシティブ</b>な検出結果は常にモデレーションに送られます。その他の信頼レベルでは、以下の設定により、写真のアルバムをセンシティブとしてマークするかどうか、および写真がアルバムに属していない場合の動作を制御します。',
+        'sensitive_album' => 'センシティブ: アルバムの処理',
+        'sensitive_no_album' => 'センシティブ: アルバムがない場合の処理',
+        'section_hide_on_scan' => 'スキャン中は非表示',
+        'hide_on_scan_explanation' => 'NSFW スキャンの実行中に写真を一時的に非表示にするかどうかを信頼レベルごとに選択します。これにより、スキャン完了前に問題のある可能性のあるコンテンツが表示されるのを防ぎます。',
+        'hide_on_scan_warning' => '有効にすると、NSFW スキャンの実行中は写真が非表示になります（モデレーションキューに入ります）。<br> NSFW 分類器がクラッシュしたり利用できない場合、管理者が手動で承認するまで写真は非表示のままになります。',
+        'hide_monitor' => 'スキャン中は監視ユーザーの写真を非表示',
+        'hide_tbv' => 'スキャン中は信頼・要確認ユーザーの写真を非表示',
+        'hide_trusted' => 'スキャン中は信頼済みユーザーの写真を非表示',
+        'section_matrix' => '信頼レベル × 検出結果マトリクス',
+        'matrix_explanation' => 'アップロードされた各写真は NSFW 分類器によってスキャンされ、3段階の深刻度で検出結果が返されます: <b>ブロック</b>（露骨なコンテンツ）、<b>要確認</b>（疑わしいコンテンツ）、<b>センシティブ</b>（軽度のコンテンツ）。各検出結果に対する処理は、アップロードしたユーザーの信頼レベルによって異なります。この表は現在の設定をまとめたものです。',
+        'matrix_trust_level' => '信頼レベル',
+        'matrix_check' => 'チェック',
+        'matrix_monitor' => '監視',
+        'matrix_tbv' => '信頼・要確認',
+        'matrix_trusted' => '信頼済み',
+        'runtime_config' => 'サービスの実行時設定',
+        'presets' => '利用可能なプリセット',
+        'key' => 'キー',
+        'value' => '値',
+        'active' => '有効',
+        'block' => 'ブロック',
+        'review' => '要確認',
+        'sensitive' => 'センシティブ',
+        'none' => 'なし',
+        'matrix_moderate' => 'モデレート',
+        'matrix_approve' => '承認',
+        'matrix_mark_album' => 'アルバムをマーク',
+        'matrix_nothing' => '何もしない',
+        'legend_block' => '写真は完全に削除されます。',
+        'legend_moderate' => '写真は管理者の確認待ちとして保留されます。',
+        'legend_approve' => '写真は承認され、検出結果は記録されます。',
+        'legend_mark_album' => '写真のアルバムがセンシティブとしてマークされます。',
+        'legend_nothing' => '何も処理されません。',
+    ],
+    'nsfw_findings' => [
+        'title' => 'NSFW 検出結果',
+    ],
+];

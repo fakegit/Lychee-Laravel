@@ -1,0 +1,203 @@
+<template>
+	<Drawer v-model:visible="left_menu_open" :pt:content:class="'flex flex-col justify-start gap-10'" :position="isLTR() ? 'left' : 'right'">
+		<template #header>
+			<div v-if="user?.id === null" class="flex items-center gap-2 text-muted-color hover:text-primary-400 w-full">
+				<RouterLink :to="{ name: 'login' }">
+					<i class="pi pi-sign-in text-lg mr-2" />
+					{{ $t("left-menu.login") }}
+				</RouterLink>
+			</div>
+			<div v-else class="flex items-center gap-2 text-muted-color hover:text-primary-400">
+				<router-link v-if="!isGallery" v-slot="{ href, navigate }" :to="{ name: 'gallery' }" custom>
+					<a v-ripple :href="href" @click="navigate">
+						<span class="text-lg font-bold pl-3">{{ $t("left-menu.back_to_gallery") }}</span>
+					</a>
+				</router-link>
+			</div>
+		</template>
+		<Menu v-if="rights" :model="items" class="border-none!" :dt="{ item: { padding: '0.1rem 0.75rem' } }">
+			<template #submenuheader="{ item }">
+				<span class="text-primary-emphasis font-bold" :class="item.access !== false ? '' : 'hidden'">
+					<!-- @vue-ignore -->
+					{{ $t(item.label) }}
+				</span>
+			</template>
+			<template #item="{ item, props }">
+				<template v-if="item.access">
+					<router-link v-if="item.route" v-slot="{ href, navigate }" :to="item.route" custom>
+						<a v-ripple :href="href" v-bind="props.action" @click="navigate">
+							<OverlayBadge v-if="item.num > 0" severity="primary" :pt:badge:class="' outline-0'">
+								<PiMiniIcon :key="item.icon" :icon="item.icon" />
+							</OverlayBadge>
+							<PiMiniIcon :key="item.icon" :icon="item.icon" v-else />
+							<span class="ml-2">
+								<!-- @vue-ignore -->
+								{{ $t(item.label) }}
+							</span>
+							<SETag v-if="item.seTag" />
+						</a>
+					</router-link>
+					<a v-if="item.url" v-ripple :href="item.url" :target="item.target" v-bind="props.action">
+						<PiMiniIcon :key="item.icon" :icon="item.icon" />
+						<span class="ml-2">
+							<!-- @vue-ignore -->
+							{{ $t(item.label) }}
+						</span>
+						<SETag v-if="item.seTag" />
+					</a>
+					<a v-if="!item.route && !item.url" v-ripple v-bind="props.action">
+						<PiMiniIcon :key="item.icon" :icon="item.icon" />
+						<span class="ml-2">
+							<!-- @vue-ignore -->
+							{{ $t(item.label) }}
+						</span>
+						<SETag v-if="item.seTag" />
+					</a>
+				</template>
+			</template>
+		</Menu>
+		<AboutLychee v-model:visible="openLycheeAbout" />
+		<div v-if="user?.id !== null" class="mt-auto">
+			<Menu v-if="rights" :model="profileItems" class="border-none!" :dt="{ item: { padding: '0.1rem 0.75rem' } }">
+				<template #item="{ item, props }">
+					<router-link v-if="item.route" v-slot="{ href, navigate }" :to="item.route" custom>
+						<a v-ripple :href="href" v-bind="props.action" @click="navigate">
+							<PiMiniIcon :icon="item.icon ?? ''" :class="'w-3 h-3'" />
+							<span class="ml-2">
+								<!-- @vue-ignore -->
+								{{ $t(item.label) }}
+							</span>
+							<SETag v-if="item.seTag" />
+						</a>
+					</router-link>
+					<a v-if="item.url" v-ripple :href="item.url" :target="item.target" v-bind="props.action">
+						<PiMiniIcon :icon="item.icon ?? ''" :class="'w-3 h-3'" />
+						<span class="ml-2">
+							<!-- @vue-ignore -->
+							{{ $t(item.label) }}
+						</span>
+						<SETag v-if="item.seTag" />
+					</a>
+					<a v-if="!item.route && !item.url" v-ripple v-bind="props.action">
+						<PiMiniIcon :icon="item.icon ?? ''" :class="'w-3 h-3'" />
+						<span class="ml-2">
+							<!-- @vue-ignore -->
+							{{ $t(item.label) }}
+						</span>
+						<SETag v-if="item.seTag" />
+					</a>
+				</template>
+			</Menu>
+			<div class="border-t border-surface-700 pt-2 p-(--p-navigation-item-padding) flex justify-between pr-0">
+				<div class="flex items-center gap-2">
+					<PiMiniIcon icon="person" :class="'w-3 h-3'" />
+					<div class="capitalize ml-2 text-muted-color">
+						{{ userStore.user?.username }}
+						<i v-if="canSeeAdmin" class="pi pi-crown text-orange-400 text-xs"></i>
+					</div>
+				</div>
+				<Button text severity="secondary" class="cursor-pointer" @click="logout">
+					<PiMiniIcon icon="account-logout" :class="'w-4 h-4'" />
+				</Button>
+			</div>
+		</div>
+	</Drawer>
+</template>
+<script setup lang="ts">
+import { computed, watch } from "vue";
+import Drawer from "primevue/drawer";
+import Menu from "primevue/menu";
+import AboutLychee from "@/v7/components/modals/AboutLychee.vue";
+import AuthService from "@/services/auth-service";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+import SETag from "@/v7/components/icons/SETag.vue";
+import Constants from "@/services/constants";
+import { useRoute } from "vue-router";
+import Button from "primevue/button";
+import PiMiniIcon from "@/v7/components/icons/PiMiniIcon.vue";
+import { useLeftMenuStateStore } from "@/stores/LeftMenuState";
+import { useGlobalRightsStore } from "@/stores/GlobalRightsState";
+import { useLeftMenu } from "@/composables/contextMenus/leftMenu";
+import { onMounted } from "vue";
+import { useFavouriteStore } from "@/stores/FavouriteState";
+import { useLtRorRtL } from "@/utils/Helpers";
+import { useUserStore } from "@/stores/UserState";
+import { useClearViewerState } from "@/composables/useClearViewerState";
+import OverlayBadge from "primevue/overlaybadge";
+
+const leftMenuState = useLeftMenuStateStore();
+const globalRightsStore = useGlobalRightsStore();
+const route = useRoute();
+const userStore = useUserStore();
+const { clearViewerState } = useClearViewerState();
+
+const lycheeStore = useLycheeStateStore();
+const favouritesStore = useFavouriteStore();
+const { isLTR } = useLtRorRtL();
+
+const { user, left_menu_open, rights, openLycheeAbout, canSeeAdmin, items, profileItems } = useLeftMenu(
+	lycheeStore,
+	leftMenuState,
+	globalRightsStore,
+	userStore,
+	favouritesStore,
+	route,
+);
+
+function logout() {
+	AuthService.logout().then(() => {
+		left_menu_open.value = false;
+		clearViewerState();
+		window.location.href = Constants.BASE_URL + "/home";
+	});
+}
+
+const isGallery = computed(() => {
+	return route.name === "gallery";
+});
+
+onMounted(() => {
+	Promise.allSettled([lycheeStore.load(), userStore.load()]);
+});
+
+// The rights only drive the menu entries: fetch them once the menu is first opened.
+watch(left_menu_open, (isOpen) => {
+	if (isOpen) {
+		globalRightsStore.ensureLoaded().catch(() => {});
+	}
+});
+
+// Fold the menu as soon as one of its entries navigates somewhere,
+// otherwise the drawer stays open on top of the freshly loaded page.
+watch(
+	() => route.fullPath,
+	() => {
+		left_menu_open.value = false;
+	},
+);
+
+// `userStore.refresh()` (called by the gallery pages on mount) resets `user.value` to
+// `undefined` while it re-fetches: a loading state, not a logout (a guest has `id: null`).
+// `lastKnownUserId` looks through it, so only a real login/logout refreshes the rights.
+let lastKnownUserId: number | null | undefined;
+
+watch(
+	() => user.value,
+	(newValue) => {
+		if (newValue === undefined) {
+			return;
+		}
+		if (lastKnownUserId !== undefined && newValue.id !== lastKnownUserId) {
+			globalRightsStore.refresh().catch(() => {});
+		}
+		lastKnownUserId = newValue.id;
+	},
+);
+</script>
+
+<style lang="css">
+.p-overlaybadge .p-badge {
+	outline: 0;
+	transform: translate(30%, -20%);
+}
+</style>

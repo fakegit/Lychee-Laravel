@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+NO_COLOR="\033[0m"
+GREEN="\033[38;5;010m"
+YELLOW="\033[38;5;011m"
+
+printf "\n${GREEN}pre commit hook start${NO_COLOR}\n"
+
+PHP_CS_FIXER="vendor/bin/php-cs-fixer"
+
+VP="node_modules/.bin/vp"
+
+if [ -x "$PHP_CS_FIXER" ]; then
+    # Exclude lang/ files - they use 4-space indentation for Weblate compatibility
+    php_files=()
+    while IFS= read -r line; do
+        php_files+=("$line")
+    done < <(git status --porcelain | awk '/^[AM].*\.php$/ {print substr($0,4)}' | grep -v '^lang/')
+    if [ "${#php_files[@]}" -gt 0 ]; then
+        printf "Running php-cs-fixer on %s PHP file(s)\n" "${#php_files[@]}"
+        "${PHP_CS_FIXER}" fix --config=.php-cs-fixer.php --path-mode=override "${php_files[@]}"
+        git add "${php_files[@]}"
+    fi
+else
+    echo ""
+    printf "${YELLOW}Please install php-cs-fixer, e.g.:${NO_COLOR}"
+    echo ""
+    echo "  composer install"
+    echo ""
+fi
+
+if [ -x "$VP" ]; then
+    # Format the staged frontend files (staged block of vite.config.ts) and re-stage them:
+    "$VP" staged
+else
+    echo ""
+    printf "${YELLOW}Please install the frontend dependencies, e.g.:${NO_COLOR}"
+    echo ""
+    echo "  npm ci"
+    echo ""
+fi
+
+printf "\n${GREEN}pre commit hook finish${NO_COLOR}\n"

@@ -1,0 +1,92 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+/**
+ * We don't care for unhandled exceptions in tests.
+ * It is the nature of a test to throw an exception.
+ * Without this suppression we had 100+ Linter warning in this file which
+ * don't help anything.
+ *
+ * @noinspection PhpDocMissingThrowsInspection
+ * @noinspection PhpUnhandledExceptionInspection
+ */
+
+namespace Tests\Feature_v2\Metrics;
+
+use App\Models\Configs;
+use App\Models\Statistics;
+use Tests\Feature_v2\Base\BaseApiWithDataTest;
+
+class EventsFiredTest extends BaseApiWithDataTest
+{
+	public function setUp(): void
+	{
+		parent::setUp();
+		Configs::set('metrics_enabled', true);
+		Configs::set('metrics_logged_in_users_enabed', true);
+	}
+
+	public function tearDown(): void
+	{
+		Configs::set('metrics_logged_in_users_enabed', false);
+		Configs::set('metrics_enabled', false);
+
+		parent::tearDown();
+	}
+
+	public function testVisitSharedAlbum(): void
+	{
+		$response = $this->getJsonWithData('Album::head', ['album_id' => $this->album4->id]);
+		$this->assertOk($response);
+		$this->assertEquals(1, Statistics::where('album_id', $this->album4->id)->firstOrFail()->visit_count);
+
+		$response = $this->get('gallery/' . $this->album4->id);
+		$this->assertOk($response);
+		$this->assertEquals(1, Statistics::where('album_id', $this->album4->id)->firstOrFail()->shared_count);
+	}
+
+	public function testVisitSharedPhoto(): void
+	{
+		$response = $this->postJson('Metrics::photo', ['photo_ids' => [$this->photo4->id], 'from_id' => $this->album4->id]);
+		$this->assertNoContent($response);
+		$this->assertEquals(1, Statistics::where('photo_id', $this->photo4->id)->firstOrFail()->visit_count);
+
+		$response = $this->postJson('Metrics::favourite', ['photo_ids' => [$this->photo4->id], 'from_id' => $this->album4->id]);
+		$this->assertNoContent($response);
+		$this->assertEquals(1, Statistics::where('photo_id', $this->photo4->id)->firstOrFail()->favourite_count);
+
+		$response = $this->get('gallery/' . $this->album4->id . '/' . $this->photo4->id);
+		$this->assertOk($response);
+		$this->assertEquals(1, Statistics::where('photo_id', $this->photo4->id)->firstOrFail()->shared_count);
+		$this->assertEquals(0, Statistics::where('album_id', $this->album4->id)->firstOrFail()->shared_count);
+	}
+
+	public function testLoggedInUser(): void
+	{
+		$this->actingAs($this->userMayUpload1);
+		$response = $this->getJsonWithData('Album::head', ['album_id' => $this->album1->id]);
+		$this->assertOk($response);
+		$this->assertEquals(1, Statistics::where('album_id', $this->album1->id)->firstOrFail()->visit_count);
+
+		$response = $this->get('gallery/' . $this->album1->id);
+		$this->assertOk($response);
+		$this->assertEquals(1, Statistics::where('album_id', $this->album1->id)->firstOrFail()->shared_count);
+	}
+
+	public function testAdminuser(): void
+	{
+		$this->actingAs($this->admin);
+		$response = $this->getJsonWithData('Album::head', ['album_id' => $this->album1->id]);
+		$this->assertOk($response);
+		$this->assertEquals(0, Statistics::where('album_id', $this->album1->id)->firstOrFail()->visit_count);
+
+		$response = $this->get('gallery/' . $this->album1->id);
+		$this->assertOk($response);
+		$this->assertEquals(0, Statistics::where('album_id', $this->album1->id)->firstOrFail()->shared_count);
+	}
+}

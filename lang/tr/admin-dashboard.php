@@ -1,0 +1,90 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+return [
+    'title' => 'Yönetici Paneli',
+    'overview' => 'Genel Bakış',
+    'tools' => 'Araçlar',
+    'tool_groups' => [
+        'core' => 'Admin',
+        'monitoring' => 'İzleme',
+        'extensions' => 'Uzantılar',
+    ],
+    'refresh' => 'Yenile',
+    'metrics' => [
+        'photos_count' => 'Fotoğraflar',
+        'albums_count' => 'Albümler',
+        'users_count' => 'Kullanıcılar',
+        'storage_bytes' => 'Kullanılan depolama',
+        'queued_jobs' => 'Kuyruktaki işler',
+        'failed_jobs_24h' => 'Başarısız işler (24 sa)',
+        'last_successful_job_at' => 'Son başarılı iş',
+    ],
+    'errors' => [
+        'partial' => 'Bazı metrikler yüklenemedi.',
+    ],
+    'security' => [
+        'title' => 'Güvenlik Bildirimleri',
+        'description' => 'Aşağıdaki güvenlik açıkları mevcut Lychee sürümünüzü etkiliyor. Lütfen en kısa sürede güncelleyin.',
+        'no_cvss' => '(CVSS puanı yok)',
+    ],
+    'update' => [
+        'title' => 'Güncelleme Durumu',
+        'update_available' => 'Daha yeni bir sürüm mevcut (mevcut: :current, en son: :latest).',
+        'git_update_available' => 'Kurulumunuz master dalının :count commit gerisinde.',
+    ],
+    'nsfw_config' => [
+        'title' => 'NSFW Algılama ve Moderasyon',
+        'tab_settings' => 'Ayarlar',
+        'tab_presets' => 'Ön Ayarlar',
+        'description' => 'Yüklenen fotoğraflar için otomatik NSFW içerik algılamayı yapılandırın. Fotoğraflar harici sınıflandırma hizmeti aracılığıyla eşzamansız olarak taranır.',
+        'enable' => 'NSFW Sınıflandırmasını Etkinleştir',
+        'preset' => 'Algılama Ön Ayarı',
+        'scan_trusted' => 'Güvenilir Kullanıcıları Tara',
+        'section_general' => 'Genel',
+        'section_actions' => 'Eylemler',
+        'actions_explanation' => 'Güven düzeyine göre bir <b>Engelle</b> bulgusu algılandığında ne olacağını yapılandırın. <b>İncele</b> bulguları, Kontrol ve İzle kullanıcılarını her zaman moderasyona gönderir; Güven ama doğrula ve Güvenilir kullanıcılar için ise otomatik olarak onaylanır.',
+        'sensitive_explanation' => 'Kontrol kullanıcılarına ait <b>Hassas</b> bulgular her zaman moderasyona gönderilir. Diğer güven düzeyleri için aşağıdaki ayarlar, fotoğrafın albümünün hassas olarak işaretlenip işaretlenmeyeceğini ve fotoğrafın albümü yoksa ne olacağını belirler.',
+        'sensitive_album' => 'Hassas: albüm eylemi',
+        'sensitive_no_album' => 'Hassas: albüm yoksa yedek eylem',
+        'section_hide_on_scan' => 'Tarama Sırasında Gizle',
+        'hide_on_scan_explanation' => 'NSFW taraması sürerken fotoğrafların geçici olarak gizlenip gizlenmeyeceğini güven düzeyine göre seçin. Bu, sorunlu olabilecek içeriğin tarama tamamlanmadan görünmesini engeller.',
+        'hide_on_scan_warning' => 'Etkinleştirildiğinde, NSFW taraması sürerken fotoğraflar gizlenir (moderasyon kuyruğuna alınır).<br> NSFW sınıflandırıcısı çökerse veya kullanılamazsa, fotoğraf bir yönetici tarafından elle onaylanana kadar gizli kalır.',
+        'hide_monitor' => 'Tarama sırasında İzle fotoğraflarını gizle',
+        'hide_tbv' => 'Tarama sırasında Güven ama doğrula fotoğraflarını gizle',
+        'hide_trusted' => 'Tarama sırasında Güvenilir fotoğrafları gizle',
+        'section_matrix' => 'Güven Düzeyi × Bulgu Matrisi',
+        'matrix_explanation' => 'Yüklenen her fotoğraf, bulguları üç önem düzeyinde döndüren NSFW sınıflandırıcısı tarafından taranır: <b>Engelle</b> (müstehcen içerik), <b>İncele</b> (şüpheli içerik) ve <b>Hassas</b> (hafif içerik). Her bulgu için uygulanan eylem, yükleyenin güven düzeyine bağlıdır. Bu tablo mevcut yapılandırmayı özetler.',
+        'matrix_trust_level' => 'Güven Düzeyi',
+        'matrix_check' => 'Kontrol',
+        'matrix_monitor' => 'İzle',
+        'matrix_tbv' => 'Güven ama doğrula',
+        'matrix_trusted' => 'Güvenilir',
+        'runtime_config' => 'Hizmet Çalışma Zamanı Yapılandırması',
+        'presets' => 'Kullanılabilir Ön Ayarlar',
+        'key' => 'Anahtar',
+        'value' => 'Değer',
+        'active' => 'Etkin',
+        'block' => 'Engelle',
+        'review' => 'İncele',
+        'sensitive' => 'Hassas',
+        'none' => 'Yok',
+        'matrix_moderate' => 'Moderasyon',
+        'matrix_approve' => 'Onayla',
+        'matrix_mark_album' => 'Albümü işaretle',
+        'matrix_nothing' => 'Hiçbir şey',
+        'legend_block' => 'Fotoğraf kalıcı olarak silinir.',
+        'legend_moderate' => 'Fotoğraf yönetici incelemesi için bekletilir.',
+        'legend_approve' => 'Fotoğraf kabul edilir, bulgu kaydedilir.',
+        'legend_mark_album' => 'Fotoğrafın albümü hassas olarak işaretlenir.',
+        'legend_nothing' => 'Hiçbir işlem yapılmaz.',
+    ],
+    'nsfw_findings' => [
+        'title' => 'NSFW bulguları',
+    ],
+];

@@ -1,0 +1,91 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Profile page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Hồ sơ',
+    'login' => [
+        'header' => 'Hồ sơ',
+        'enter_current_password' => 'Nhập mật khẩu hiện tại của bạn:',
+        'current_password' => 'Mật khẩu hiện tại',
+        'credentials_update' => 'Thông tin đăng nhập của bạn sẽ được đổi thành:',
+        'username' => 'Tên người dùng',
+        'change_password' => 'Đổi mật khẩu',
+        'cancel_password_change' => 'Hủy đổi mật khẩu',
+        'new_password' => 'Mật khẩu mới',
+        'confirm_new_password' => 'Xác nhận mật khẩu mới',
+        'password_strength_info' => 'Độ mạnh mật khẩu được ước tính bằng <a href="https://github.com/dropbox/zxcvbn" class="inline-block border-b border-info border-dashed" target="_blank" rel="noreferrer">thuật toán zxcvbn</a>.',
+        'email_instruction' => 'Thêm email của bạn bên dưới để nhận thông báo qua email. Để ngừng nhận email, chỉ cần xóa email bên dưới.',
+        'email' => 'Email',
+        'change' => 'Đổi thông tin đăng nhập',
+        'api_token' => 'API Token ...',
+        'missing_fields' => 'Thiếu trường',
+        'ldap_managed' => 'Thông tin đăng nhập của người dùng được quản lý bởi LDAP.',
+    ],
+    'register' => [
+        'username_exists' => 'Tên người dùng đã tồn tại.',
+        'password_mismatch' => 'Mật khẩu không khớp.',
+        'signup' => 'Đăng ký',
+        'error' => 'Đã xảy ra lỗi khi đăng ký tài khoản của bạn.',
+        'success' => 'Tài khoản của bạn đã được tạo thành công.',
+    ],
+    'admin_setup' => [
+        'header' => 'Thiết lập tài khoản quản trị',
+        'welcome' => 'Chào mừng đến với Lychee,<br>hãy bắt đầu bằng việc tạo tài khoản quản trị.',
+        'submit' => 'Tạo tài khoản quản trị',
+        'success' => 'Đã tạo tài khoản quản trị thành công.',
+        'error' => 'Đã xảy ra lỗi khi tạo tài khoản quản trị.',
+        'already_exists' => 'Tài khoản quản trị đã được thiết lập.',
+    ],
+    'token' => [
+        'unavailable' => 'Bạn đã xem token này rồi.',
+        'no_data' => 'Chưa tạo token API nào.',
+        'disable' => 'Vô hiệu hóa',
+        'disabled' => 'Đã vô hiệu hóa token',
+        'warning' => 'Token này sẽ không được hiển thị lại. Hãy sao chép và lưu ở nơi an toàn.',
+        'reset' => 'Đặt lại token',
+        'create' => 'Tạo token mới',
+    ],
+    'oauth' => [
+        'header' => 'OAuth',
+        'header_not_available' => 'OAuth không khả dụng',
+        'setup_env' => 'Thiết lập thông tin xác thực trong tệp .env',
+        'token_registered' => 'Đã đăng ký token %s.',
+        'setup' => 'Thiết lập %s',
+        'reset' => 'đặt lại',
+        'credential_deleted' => 'Đã xóa thông tin xác thực!',
+    ],
+    'u2f' => [
+        'header' => 'Passkey/MFA/2FA',
+        'info' => 'Tính năng này chỉ cho phép dùng WebAuthn để xác thực thay cho tên người dùng & mật khẩu.',
+        'empty' => 'Danh sách thông tin xác thực trống!',
+        'not_secure' => 'Môi trường không an toàn. U2F không khả dụng.',
+        'new' => 'Đăng ký thiết bị mới.',
+        'credential_deleted' => 'Đã xóa thông tin xác thực!',
+        'credential_updated' => 'Đã cập nhật thông tin xác thực!',
+        'credential_registred' => 'Đăng ký thành công!',
+        '5_chars' => 'Ít nhất 5 ký tự.',
+    ],
+    'preferences' => [
+        'header' => 'Tùy chọn',
+        'save' => 'Lưu tùy chọn',
+        'reset' => 'Đặt lại',
+        'change_saved' => 'Đã lưu tùy chọn!',
+    ],
+    'shared_albums' => [
+        'instruction' => 'Chọn cách hiển thị album được chia sẻ (album của người dùng khác) trong thư viện của bạn:',
+        'mode_default' => 'Dùng mặc định của máy chủ',
+        'mode_default_desc' => 'Kế thừa chế độ hiển thị mặc định của máy chủ.',
+        'mode_show' => 'Hiển thị chung',
+        'mode_show_desc' => 'Album được chia sẻ xuất hiện bên dưới album của bạn.',
+        'mode_separate' => 'Tab riêng',
+        'mode_separate_desc' => 'Xem album trong các tab riêng "Album của tôi" và "Được chia sẻ với tôi".',
+        'mode_separate_shared_only' => 'Chỉ album được chia sẻ',
+        'mode_separate_shared_only_desc' => 'Tab riêng chỉ hiển thị album được chia sẻ trực tiếp (không gồm album công khai).',
+        'mode_hide' => 'Ẩn',
+        'mode_hide_desc' => 'Không hiển thị album được chia sẻ nào.',
+    ],
+];

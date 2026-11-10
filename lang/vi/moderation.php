@@ -1,0 +1,57 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Moderation page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Kiểm duyệt',
+    'description' => 'Xem xét và phê duyệt ảnh do người dùng có mức tin cậy "check" tải lên trước khi chúng được hiển thị công khai.',
+    'approve_selected' => 'Phê duyệt mục đã chọn',
+    'delete_selected' => 'Xóa mục đã chọn',
+    'selected' => 'đã chọn',
+    'no_pending' => 'Không có ảnh nào đang chờ kiểm duyệt.',
+    'approved' => 'Đã phê duyệt ảnh thành công.',
+    'col_thumbnail' => 'Ảnh thu nhỏ',
+    'col_title' => 'Tiêu đề',
+    'col_owner' => 'Chủ sở hữu',
+    'col_album' => 'Album',
+    'col_uploaded' => 'Ngày tải lên',
+    'col_nsfw' => 'NSFW',
+    'nsfw_review' => 'Xem xét NSFW',
+    'overlay_confidence' => 'Độ tin cậy: :value%',
+    'overlay_area' => 'Vùng: :value',
+    'overlay_mode_all' => 'NSFW: Tất cả',
+    'overlay_mode_block' => 'NSFW: Chặn',
+    'overlay_mode_review' => 'NSFW: Xem xét',
+    'overlay_mode_sensitive' => 'NSFW: Nhạy cảm',
+    // Feature 089: moderation history and NSFW findings review.
+    'tab_pending' => 'Đang chờ',
+    'tab_history' => 'Lịch sử',
+    'no_history' => 'Không có lịch sử kiểm duyệt.',
+    'col_photo' => 'Ảnh',
+    'col_event' => 'Sự kiện',
+    'col_by' => 'Bởi',
+    'col_date' => 'Ngày',
+    'event_held' => 'Bị giữ lại',
+    'event_approved' => 'Đã phê duyệt',
+    'source_upload' => 'Tải lên',
+    'source_nsfw_scan' => 'Quét NSFW',
+    'history_title' => 'Kiểm duyệt',
+    'history_show_all' => 'Hiển thị tất cả (:count)',
+    'findings_title' => 'Phát hiện NSFW',
+    'findings_description' => 'Xem xét các phát hiện NSFW và bỏ qua những phát hiện sai. Các phát hiện bị bỏ qua sẽ bị xóa; một lần quét mới có thể phát hiện lại chúng.',
+    'findings_empty' => 'Không có phát hiện NSFW nào.',
+    'findings_col_status' => 'Trạng thái',
+    'findings_col_findings' => 'Phát hiện',
+    'findings_col_albums' => 'Album',
+    'findings_hidden' => 'Ẩn',
+    'findings_dismiss' => 'Bỏ qua',
+    'findings_dismiss_all' => 'Bỏ qua tất cả phát hiện của ảnh này',
+    'findings_dismiss_selected' => 'Bỏ qua mục đã chọn',
+    'findings_confirm_header' => 'Bỏ qua phát hiện',
+    'findings_confirm' => 'Bỏ qua tất cả phát hiện của :count ảnh? Chúng sẽ bị xóa.',
+    'findings_dismissed' => 'Đã bỏ qua các phát hiện.',
+    'findings_error' => 'Không thể tải hoặc thay đổi các phát hiện NSFW.',
+];

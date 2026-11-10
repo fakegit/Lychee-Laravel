@@ -1,0 +1,262 @@
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+import { computed, type ComputedRef } from "vue";
+import { storeToRefs } from "pinia";
+import { breakpointsTailwind, useBreakpoints } from "@vueuse/core";
+import { type GlobalRightsStore } from "@/stores/GlobalRightsState";
+import { type LycheeStateStore } from "@/stores/LycheeState";
+
+export type AdminTileGroup = "core" | "monitoring" | "extensions";
+
+export type AdminTile = {
+	key: string;
+	group: AdminTileGroup;
+	label: string;
+	icon: string;
+	to: string;
+	isExternal: boolean;
+	visible: ComputedRef<boolean>;
+	num?: ComputedRef<number>;
+	disabled?: ComputedRef<boolean>;
+};
+
+export function useAdminTiles(lycheeStore: LycheeStateStore, globalRightsStore: GlobalRightsStore): AdminTile[] {
+	const { clockwork_url, is_se_enabled, is_se_preview_enabled, is_face_recognition_enabled } = storeToRefs(lycheeStore);
+	const { rights } = storeToRefs(globalRightsStore);
+	const breakpoints = useBreakpoints(breakpointsTailwind);
+	const isSmallScreen = breakpoints.smaller("lg");
+	const isBelowMd = breakpoints.smaller("md");
+
+	return [
+		{
+			key: "settings",
+			group: "core",
+			label: "settings.title",
+			icon: "lucide:settings",
+			to: "/admin/settings",
+			isExternal: false,
+			visible: computed(() => rights.value?.settings.can_edit ?? false),
+		},
+		{
+			key: "design-system",
+			group: "core",
+			label: "design-system.title",
+			icon: "lucide:palette",
+			to: "/admin/design",
+			isExternal: false,
+			visible: computed(() => (rights.value?.settings.can_edit ?? false) && (rights.value?.modules.is_design_system_enabled ?? false)),
+		},
+		{
+			key: "diagnostics",
+			group: "monitoring",
+			label: "diagnostics.title",
+			icon: "lucide:stethoscope",
+			to: "/diagnostics",
+			isExternal: false,
+			visible: computed(() => rights.value?.settings.can_see_diagnostics ?? false),
+		},
+		{
+			key: "users",
+			group: "core",
+			label: "users.title",
+			icon: "lucide:user",
+			to: "/admin/users",
+			isExternal: false,
+			visible: computed(() => rights.value?.user_management.can_edit ?? false),
+		},
+		{
+			key: "user-groups",
+			group: "core",
+			label: "user-groups.title",
+			icon: "lucide:users",
+			to: "/admin/user-groups",
+			isExternal: false,
+			visible: computed(() => rights.value?.settings.can_acess_user_groups ?? false),
+			disabled: isBelowMd,
+		},
+		{
+			key: "purchasables",
+			group: "extensions",
+			label: "webshop.purchasablesList.purchasables",
+			icon: "lucide:shopping-bag",
+			to: "/admin/purchasables",
+			isExternal: false,
+			visible: computed(() => (rights.value?.modules.is_mod_webshop_enabled ?? false) && (rights.value?.settings.can_edit ?? false)),
+			disabled: isBelowMd,
+		},
+		{
+			key: "shop-sizes",
+			group: "extensions",
+			label: "left-menu.shopSizes",
+			icon: "lucide:expand",
+			to: "/admin/shop/sizes",
+			isExternal: false,
+			visible: computed(() => (rights.value?.modules.is_mod_webshop_enabled ?? false) && (rights.value?.settings.can_edit ?? false)),
+			disabled: isBelowMd,
+		},
+		{
+			key: "contact-messages",
+			group: "extensions",
+			label: "left-menu.messages",
+			icon: "lucide:inbox",
+			to: "/admin/contact-messages",
+			isExternal: false,
+			num: computed(() => rights.value?.modules.messages_count ?? 0),
+			visible: computed(
+				() =>
+					(rights.value?.modules.is_contact_enabled ?? false) &&
+					((rights.value?.settings.can_edit ?? false) ||
+						(rights.value?.user_management.can_edit ?? false) ||
+						(rights.value?.settings.can_see_diagnostics ?? false) ||
+						(rights.value?.settings.can_see_logs ?? false) ||
+						(rights.value?.settings.can_acess_user_groups ?? false)),
+			),
+		},
+		{
+			key: "webhooks",
+			group: "extensions",
+			label: "left-menu.webhooks",
+			icon: "lucide:send",
+			to: "/admin/webhooks",
+			isExternal: false,
+			visible: computed(() => rights.value?.modules.is_mod_webhook_enabled ?? false),
+		},
+		{
+			key: "faces",
+			group: "extensions",
+			label: "maintenance.face_quality.title",
+			icon: "lucide:smile",
+			to: "/admin/maintenance/faces",
+			isExternal: false,
+			visible: computed(() => (rights.value?.settings.can_edit ?? false) && (is_face_recognition_enabled.value ?? false)),
+		},
+		{
+			key: "nsfw-config",
+			group: "extensions",
+			label: "admin-dashboard.nsfw_config.title",
+			icon: "lucide:eye",
+			to: "/admin/nsfw-config",
+			isExternal: false,
+			visible: computed(() => (rights.value?.settings.can_edit ?? false) && (rights.value?.modules.is_nsfw_classifier_enabled ?? false)),
+		},
+		{
+			key: "nsfw-findings",
+			group: "extensions",
+			label: "admin-dashboard.nsfw_findings.title",
+			icon: "lucide:shield-alert",
+			to: "/admin/nsfw-findings",
+			isExternal: false,
+			visible: computed(() => (rights.value?.settings.can_edit ?? false) && (rights.value?.modules.is_nsfw_classifier_enabled ?? false)),
+		},
+		{
+			key: "watermark-preview",
+			group: "extensions",
+			label: "watermark.preview.title",
+			icon: "lucide:image",
+			to: "/admin/watermark",
+			isExternal: false,
+			visible: computed(
+				() =>
+					(rights.value?.settings.can_edit ?? false) &&
+					(is_se_enabled.value || is_se_preview_enabled.value) &&
+					(rights.value?.modules.is_watermarker_available ?? false),
+			),
+		},
+		{
+			key: "landing-config",
+			group: "extensions",
+			label: "landing_config.title",
+			icon: "lucide:layout-template",
+			to: "/admin/landing-config",
+			isExternal: false,
+			visible: computed(() => rights.value?.settings.can_edit ?? false),
+		},
+		{
+			key: "gallery-sizes",
+			group: "extensions",
+			label: "gallery_sizes.title",
+			icon: "lucide:ruler",
+			to: "/admin/gallery-sizes",
+			isExternal: false,
+			visible: computed(() => rights.value?.settings.can_edit ?? false),
+		},
+		{
+			key: "bulk-album-edit",
+			group: "core",
+			label: "bulk_album_edit.title",
+			icon: "lucide:folder",
+			to: "/bulk-album-edit",
+			isExternal: false,
+			visible: computed(() => rights.value?.settings.can_edit ?? false),
+			disabled: isSmallScreen,
+		},
+		{
+			key: "sharing",
+			group: "core",
+			label: "sharing.title",
+			icon: "lucide:cloud",
+			to: "/sharing",
+			isExternal: false,
+			visible: computed(() => rights.value?.root_album.can_upload ?? false),
+			disabled: isSmallScreen,
+		},
+		{
+			key: "moderation",
+			group: "core",
+			label: "moderation.title",
+			icon: "lucide:shield",
+			to: "/admin/moderation",
+			isExternal: false,
+			visible: computed(
+				() =>
+					(rights.value?.settings.can_edit ?? false) ||
+					(rights.value?.user_management.can_edit ?? false) ||
+					(rights.value?.settings.can_see_diagnostics ?? false) ||
+					(rights.value?.settings.can_see_logs ?? false) ||
+					(rights.value?.settings.can_acess_user_groups ?? false),
+			),
+		},
+		{
+			key: "maintenance",
+			group: "core",
+			label: "maintenance.title",
+			icon: "lucide:timer",
+			to: "/admin/maintenance",
+			isExternal: false,
+			visible: computed(() => rights.value?.settings.can_edit ?? false),
+		},
+		{
+			key: "jobs",
+			group: "monitoring",
+			label: "left-menu.jobs",
+			icon: "lucide:chart-gantt",
+			to: "/admin/jobs",
+			isExternal: false,
+			visible: computed(() => rights.value?.settings.can_see_logs ?? false),
+			disabled: isBelowMd,
+		},
+
+		{
+			key: "logs",
+			group: "monitoring",
+			label: "left-menu.logs",
+			icon: "lucide:logs",
+			to: "/Logs",
+			isExternal: true,
+			visible: computed(() => rights.value?.settings.can_see_logs ?? false),
+		},
+		{
+			key: "clockwork",
+			group: "monitoring",
+			label: "left-menu.clockwork",
+			icon: "lucide:telescope",
+			to: clockwork_url.value ?? "",
+			isExternal: true,
+			visible: computed(() => clockwork_url.value !== null && (rights.value?.settings.can_access_dev_tools ?? false)),
+		},
+	];
+}

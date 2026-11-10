@@ -1,0 +1,53 @@
+<!DOCTYPE HTML>
+<html
+    @if(app()->getLocale() == 'ar' || app()->getLocale() == 'fa')
+    {{-- Arabic or Persian --}}
+    dir="rtl"
+    @else
+    dir="ltr"
+    @endif
+    {{-- Default to LTR --}}
+    lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<head>
+    <meta charset="UTF-8">
+    <x-meta />
+    @if(Features::active('v8'))
+    @vite(['resources/js/app-v8.ts','resources/sass/app-v8.css'])
+	{{-- <x-style /> overrides app-v8.css's --ui-color-* custom properties via plain
+	     unlayered same-specificity, later-source-wins cascade (app-v8.css has no
+	     @layer around those declarations) - it must stay after the app-v8.css
+	     @vite tag above, or admin-picked theme colors silently stop applying. --}}
+	<x-style />
+    @else
+    @vite(['resources/js/app.ts','resources/sass/app.css'])
+    @endif
+</head>
+{{-- Dirty work around but hey, backward compatibility... --}}
+@if(Features::active('legacy_v4_redirect'))
+<script>
+	const hashMatch = document.location.hash.replace("#", "").split("/");
+	const albumID = hashMatch[0] ?? '';
+	const photoID = hashMatch[1] ?? '';
+	const url = document.querySelector("base")?.getAttribute("href");
+
+	if (photoID !== '') {
+		window.location = url + `/gallery/${albumID}/${photoID}`;
+	} else if (albumID !== '') {
+		window.location = url + `/gallery/${albumID}`;
+	}
+</script>
+@endif
+{{-- End of work around... --}}
+@if(resolve(\App\Repositories\ConfigManager::class)->getValueAsBool('dark_mode_enabled'))
+    <body class="antialiased dark">
+@else
+    <body class="antialiased">
+@endif
+        <x-warning-misconfiguration />
+    @include('includes.svg')
+	<div id="app" class="w-full3 isolate">
+        <app/>
+	</div>
+	<x-webshop />
+</body>
+</html>

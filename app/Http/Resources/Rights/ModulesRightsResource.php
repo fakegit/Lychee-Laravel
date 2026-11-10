@@ -1,0 +1,308 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Http\Resources\Rights;
+
+use App\Contracts\Models\AbstractAlbum;
+use App\Factories\AlbumFactory;
+use App\Image\Watermarker;
+use App\Models\ContactMessage;
+use App\Models\Photo;
+use App\Policies\AlbumPolicy;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
+use Spatie\LaravelData\Data;
+use Spatie\TypeScriptTransformer\Attributes\TypeScript;
+
+#[TypeScript()]
+class ModulesRightsResource extends Data
+{
+	public bool $is_map_enabled = false;
+	public bool $is_mod_frame_enabled = false;
+	public bool $is_mod_flow_enabled = false;
+	public bool $is_watermarker_enabled = false;
+	public bool $is_watermarker_available = false;
+	public bool $is_photo_timeline_enabled = false;
+	public bool $is_mod_renamer_enabled = false;
+	public bool $is_mod_webshop_enabled = false;
+	public bool $is_mod_webhook_enabled = false;
+	public bool $is_nsfw_classifier_enabled = false;
+	public bool $is_face_overlay_enabled = true;
+	public bool $is_face_recognition_warning_enabled = true;
+	public bool $can_quick_name_faces = false;
+	public bool $is_contact_enabled = false;
+	public int $messages_count = 0;
+	public bool $is_design_system_enabled = false;
+
+	public function __construct()
+	{
+		$is_logged_in = Auth::check();
+
+		$this->is_map_enabled = $this->isMapEnabled($is_logged_in);
+		$this->is_mod_frame_enabled = $this->isModFrameEnabled();
+		$this->is_mod_flow_enabled = $this->isModFlowEnabled($is_logged_in);
+		$this->is_watermarker_enabled = $this->isWatermarkerEnabled($is_logged_in);
+		$this->is_watermarker_available = $this->isWatermarkerAvailable($is_logged_in);
+		$this->is_photo_timeline_enabled = $this->isTimelinePhotosEnabled($is_logged_in);
+		$this->is_mod_renamer_enabled = $this->isRenamerEnabled();
+		$this->is_mod_webshop_enabled = $this->isWebshopEnabled();
+		$this->is_mod_webhook_enabled = $this->isWebhookEnabled();
+		$this->is_nsfw_classifier_enabled = $this->isNsfwClassifierEnabled($is_logged_in);
+		$this->is_face_overlay_enabled = request()->configs()->getValueAsBool('ai_vision_face_overlay_enabled');
+		$this->is_face_recognition_warning_enabled = request()->configs()->getValueAsBool('ai_vision_face_recognition_warning');
+		$this->is_design_system_enabled = request()->configs()->getValueAsBool('enable_design_system');
+		$this->can_quick_name_faces = $this->canQuickNameFaces($is_logged_in);
+		$this->isContactEnabled();
+	}
+
+	/**
+	 * Whether the face quick naming view is available (Feature 093, FR-093-07):
+	 * v8 flag on, AI Vision and face recognition enabled, and the
+	 * library-wide batch face right (admins in every mode, logged-in users in
+	 * `public`/`private` mode).
+	 */
+	private function canQuickNameFaces(bool $is_logged_in): bool
+	{
+		return $is_logged_in &&
+			config('features.v8') === true &&
+			request()->configs()->getValueAsBool('ai_vision_enabled') &&
+			request()->configs()->getValueAsBool('ai_vision_face_enabled') &&
+			Gate::check(AlbumPolicy::CAN_BATCH_FACE_OPS, [AbstractAlbum::class, null]);
+	}
+
+	/**
+	 * Check if the map module is enabled and accessible to the current user.
+	 *
+	 * @param bool $is_logged_in
+	 *
+	 * @return bool true if the map module is enabled and accessible, false otherwise
+	 */
+	private function isMapEnabled(bool $is_logged_in): bool
+	{
+		// Disabled if EXIF display is off: We cannot at the same time hide EXIF and show maps
+		if (request()->configs()->getValueAsBool('display_exif_data') === false) {
+			return false;
+		}
+		$has_locations = Photo::whereNotNull('latitude')->whereNotNull('longitude')->exists();
+		$map_display = request()->configs()->getValueAsBool('map_display');
+		$public_display = $is_logged_in || request()->configs()->getValueAsBool('map_display_public');
+
+		return $has_locations && $map_display && $public_display;
+	}
+
+	/**
+	 * Check if the frame module is enabled and accessible to the current user.
+	 *
+	 * @return bool true if the frame module is enabled and accessible, false otherwise
+	 */
+	private function isModFrameEnabled(): bool
+	{
+		if (!request()->configs()->getValueAsBool('mod_frame_enabled')) {
+			return false;
+		}
+
+		$factory = resolve(AlbumFactory::class);
+		try {
+			$random_album_id = request()->configs()->getValueAsString('random_album_id');
+			$random_album_id = ($random_album_id !== '') ? $random_album_id : null;
+			$album = $factory->findNullalbleAbstractAlbumOrFail($random_album_id);
+
+			return Gate::check(AlbumPolicy::CAN_ACCESS, [AbstractAlbum::class, $album]);
+		} catch (\Throwable) {
+			Log::critical('Could not find random album for frame with ID:' . request()->configs()->getValueAsString('random_album_id'));
+
+			return false;
+		}
+	}
+
+	/**
+	 * Check if the flow module is enabled and accessible to the current user.
+	 * The flow module provides a dynamic and visually appealing way to browse through photos.
+	 *
+	 * @param bool $is_logged_in
+	 *
+	 * @return bool
+	 */
+	private function isModFlowEnabled(bool $is_logged_in): bool
+	{
+		if (!request()->configs()->getValueAsBool('flow_enabled')) {
+			return false;
+		}
+
+		return $is_logged_in || request()->configs()->getValueAsBool('flow_public');
+	}
+
+	/**
+	 * Check if the timeline photos module is enabled and accessible to the current user.
+	 *
+	 * @param bool $is_logged_in
+	 *
+	 * @return bool
+	 */
+	private function isTimelinePhotosEnabled(bool $is_logged_in): bool
+	{
+		$timeline_photos_enabled = request()->configs()->getValueAsBool('timeline_photos_enabled');
+		$timeline_photos_public = request()->configs()->getValueAsBool('timeline_photos_public');
+
+		return $timeline_photos_enabled && ($is_logged_in || $timeline_photos_public);
+	}
+
+	/**
+	 * Check if the watermarker module is enabled and accessible to the current user.
+	 * The watermarker module allows users to apply watermarks to photos for protection and branding purposes.
+	 *
+	 * With this function we inform the front-end that the watermarker can be triggered to be applied to photos.
+	 *
+	 * @return bool true if the watermarker is enabled and accessible, false otherwise
+	 */
+	private function isWatermarkerEnabled(bool $is_logged_in): bool
+	{
+		if (!$is_logged_in) {
+			return false;
+		}
+
+		if (!request()->verify()->check()) {
+			return false;
+		}
+
+		return resolve(Watermarker::class)->can_watermark();
+	}
+
+	/**
+	 * Check if the watermarker module is configured (config toggle + Imagick) and accessible to
+	 * the current user, regardless of whether a watermark photo has been picked yet.
+	 *
+	 * Unlike {@see isWatermarkerEnabled()}, this does not require a watermark photo to already be
+	 * selected. It drives visibility of the watermarker configuration tile/page, where the admin
+	 * is meant to pick that photo in the first place.
+	 *
+	 * @return bool true if the watermarker module is configured and accessible, false otherwise
+	 */
+	private function isWatermarkerAvailable(bool $is_logged_in): bool
+	{
+		if (!$is_logged_in) {
+			return false;
+		}
+
+		if (!request()->verify()->check()) {
+			return false;
+		}
+
+		return resolve(Watermarker::class)->is_module_enabled();
+	}
+
+	/**
+	 * Check if the renamer module is enabled and accessible to the current user.
+	 *
+	 * The renamer module allows users to create and manage rules for automatically
+	 * renaming photos based on patterns and replacements.
+	 *
+	 * @return bool true if the renamer is enabled and accessible, false otherwise
+	 */
+	private function isRenamerEnabled(): bool
+	{
+		if (!request()->verify()->check()) {
+			return false;
+		}
+
+		if (!request()->configs()->getValueAsBool('renamer_enabled')) {
+			return false;
+		}
+
+		if (request()->configs()->getValueAsBool('renamer_enforced') && Auth::user()?->may_administrate !== true) {
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Check if the webshop module is enabled.
+	 *
+	 * @return bool true if the webshop is enabled, false otherwise
+	 */
+	private function isWebshopEnabled(): bool
+	{
+		if (config('features.webshop') === false) {
+			return false;
+		}
+
+		if (!request()->verify()->is_pro()) {
+			return false;
+		}
+
+		return request()->configs()->getValueAsBool('webshop_enabled');
+	}
+
+	/**
+	 * Check if the webhook module is enabled for administrators.
+	 *
+	 * The webhook feature is gated behind the WEBHOOK_ENABLED environment variable.
+	 * Only admins see and interact with webhook configuration.
+	 *
+	 * @return bool true if the webhook feature is enabled and the user is an admin, false otherwise
+	 */
+	private function isWebhookEnabled(): bool
+	{
+		if (config('features.webhook') === false) {
+			return false;
+		}
+
+		return Auth::user()?->may_administrate === true;
+	}
+
+	/**
+	 * Check if the NSFW classifier is enabled and accessible to the current user.
+	 *
+	 * Requires the AI Vision feature flag, user login, and both
+	 * ai_vision_enabled and ai_vision_nsfw_enabled config settings.
+	 *
+	 * @param bool $is_logged_in
+	 *
+	 * @return bool
+	 */
+	private function isNsfwClassifierEnabled(bool $is_logged_in): bool
+	{
+		if (config('features.ai-vision') === false) {
+			return false;
+		}
+
+		if (!$is_logged_in) {
+			return false;
+		}
+
+		if (!request()->verify()->check()) {
+			return false;
+		}
+
+		return request()->configs()->getValueAsBool('ai_vision_enabled') &&
+			request()->configs()->getValueAsBool('ai_vision_nsfw_enabled');
+	}
+
+	/**
+	 * Check if contact is enabled and set the messages count.
+	 *
+	 * @return void
+	 */
+	private function isContactEnabled(): void
+	{
+		if (!request()->configs()->getValueAsBool('contact_form_enabled')) {
+			return;
+		}
+
+		$this->is_contact_enabled = true;
+
+		// Only show this information to administrators.
+		if (Auth::user()?->may_administrate !== true) {
+			return;
+		}
+
+		$this->messages_count = ContactMessage::query()->where('is_read', '=', false)->toBase()->count();
+	}
+}

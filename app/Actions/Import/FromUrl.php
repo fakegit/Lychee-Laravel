@@ -1,66 +1,111 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\Actions\Import;
 
-use App\Actions\Import\Extensions\Checks;
-use App\Actions\Import\Extensions\ImportPhoto;
-use App\Actions\Photo\Extensions\Constants;
-use App\Models\Logs;
-use Helpers;
-use Illuminate\Support\Facades\Storage;
+use App\Actions\Photo\Create;
+use App\DTO\ImportMode;
+use App\DTO\UrlValidatedDTO;
+use App\Enum\UserUploadTrustLevel;
+use App\Exceptions\Handler;
+use App\Exceptions\MassImportException;
+use App\Image\Files\DownloadedFile;
+use App\Models\Album;
+use App\Models\Photo;
+use App\Repositories\ConfigManager;
+use App\Services\Image\FileExtensionService;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
+use Safe\Exceptions\InfoException;
+use function Safe\ini_get;
+use function Safe\parse_url;
+use function Safe\set_time_limit;
 
 class FromUrl
 {
-	use Constants;
-	use ImportPhoto;
-	use Checks;
-
-	public function __construct()
+	/**
+	 * Imports photos from a list of URLs.
+	 *
+	 * TODO: Instead of returning a collection of photos and throwing a potential {@link MassImportException}, we should use a streamed response like in {@link FromServer}
+	 *
+	 * @param UrlValidatedDTO[] $urls
+	 * @param Album|null        $album
+	 * @param int               $intended_owner_id
+	 *
+	 * @return Collection<int,Photo> the collection of imported photos
+	 *
+	 * @throws MassImportException
+	 */
+	public function do(array $urls, ?Album $album, int $intended_owner_id): Collection
 	{
-		$this->checkPermissions();
-	}
+		$config_manager = resolve(ConfigManager::class);
+		$result = new Collection();
+		$exceptions = [];
 
-	public function do(array $urls, $albumId): bool
-	{
-		$error = false;
-
-		foreach ($urls as &$url) {
-			// Reset the execution timeout for every iteration.
-			set_time_limit(ini_get('max_execution_time'));
-
-			// Validate photo type and extension even when $this->photo (=> $photo->add) will do the same.
-			// This prevents us from downloading invalid photos.
-			// Verify extension
-			$extension = Helpers::getExtension($url, true);
-			if (!$this->isValidExtension($extension)) {
-				$error = true;
-				Logs::error(__METHOD__, __LINE__, 'Photo format not supported (' . $url . ')');
-				continue;
-			}
-
-			// Verify image
-			$type = @exif_imagetype($url);
-			if (!$this->isValidImageType($type) && !in_array(strtolower($extension), $this->validExtensions, true)) {
-				$error = true;
-				Logs::error(__METHOD__, __LINE__, 'Photo type not supported (' . $url . ')');
-				continue;
-			}
-
-			$filename = pathinfo($url, PATHINFO_FILENAME) . $extension;
-			$tmp_name = Storage::path('import/' . $filename);
-			if (@copy($url, $tmp_name) === false) {
-				$error = true;
-				Logs::error(__METHOD__, __LINE__, 'Could not copy file (' . $url . ') to temp-folder (' . $tmp_name . ')');
-				continue;
-			}
-
-			// Import photo
-			if (!$this->photo($tmp_name, true, false, $albumId)) {
-				$error = true;
-				Logs::error(__METHOD__, __LINE__, 'Could not import file (' . $tmp_name . ')');
-			}
+		$user = Auth::user();
+		if ($user?->may_administrate === true) {
+			$upload_trust_level = UserUploadTrustLevel::TRUSTED;
+		} elseif ($user !== null) {
+			$upload_trust_level = $user->upload_trust_level;
+		} else {
+			$upload_trust_level = $config_manager->getValueAsEnum('guest_upload_trust_level', UserUploadTrustLevel::class)
+				?? UserUploadTrustLevel::CHECK;
 		}
 
-		return !$error;
+		$create = new Create(
+			import_mode: new ImportMode(
+				delete_imported: true,
+				skip_duplicates: $config_manager->getValueAsBool('skip_duplicates'),
+				shall_rename_photo_title: $config_manager->getValueAsBool('renamer_photo_title_enabled'),
+			),
+			intended_owner_id: $intended_owner_id,
+			upload_trust_level: $upload_trust_level,
+		);
+
+		$file_extension_service = resolve(FileExtensionService::class);
+		foreach ($urls as $url) {
+			try {
+				try {
+					set_time_limit((int) ini_get('max_execution_time'));
+				} catch (InfoException) {
+					// Silently do nothing, if `set_time_limit` is denied.
+				}
+
+				// If the component parameter is specified, this function returns a string (or int in case of PHP_URL_PORT)
+				/** @var string $path */
+				$path = parse_url($url->url, PHP_URL_PATH);
+				$extension = '.' . pathinfo($path, PATHINFO_EXTENSION);
+				if ($extension !== '.') {
+					// Validate photo extension even when `$create->add()` will do later.
+					// This prevents us from downloading unsupported files.
+					$file_extension_service->assertIsSupportedOrAcceptedFileExtension($extension);
+				}
+
+				// Download file
+				$downloaded_file = new DownloadedFile($url);
+
+				// Import photo/video/raw
+				$result->add($create->add($downloaded_file, $album));
+				// @codeCoverageIgnoreStart
+			} catch (\Throwable $e) {
+				$exceptions[] = $e;
+				Handler::reportSafely($e);
+			}
+			// @codeCoverageIgnoreEnd
+		}
+
+		if (count($exceptions) !== 0) {
+			// @codeCoverageIgnoreStart
+			// Those are already caught.
+			throw new MassImportException($exceptions);
+			// @codeCoverageIgnoreEnd
+		}
+
+		return $result;
 	}
 }

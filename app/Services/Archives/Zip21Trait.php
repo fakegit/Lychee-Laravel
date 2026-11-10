@@ -1,0 +1,65 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Services\Archives;
+
+use App\DTO\ZippablePhoto;
+use App\Exceptions\ConfigurationKeyMissingException;
+use App\Exceptions\Internal\LycheeLogicException;
+use App\Repositories\ConfigManager;
+use Composer\InstalledVersions;
+use Composer\Semver\VersionParser;
+use ZipStream\ZipStream;
+
+/**
+ * This code is untestable as it is tightly coupled with the ZipStream version.
+ * Tests are run with ZipStream version 3.1+.
+ * This code has been tested manually by the developer.
+ *
+ * @codeCoverageIgnore
+ */
+trait Zip21Trait
+{
+	/**
+	 * @return ZipStream
+	 *
+	 * @throws ConfigurationKeyMissingException
+	 */
+	protected function createZip(): ZipStream
+	{
+		if (InstalledVersions::satisfies(new VersionParser(), 'maennchen/zipstream-php', '^2.1')) {
+			$config_manager = resolve(ConfigManager::class);
+			$options = new \ZipStream\Option\Archive();
+			$options->setContentType('application/octet-stream');
+			$options->setDeflateLevel($this->deflate_level);
+			$options->setZeroHeader(true);
+			$options->setEnableZip64($config_manager->getValueAsBool('zip64'));
+			$options->setSendHttpHeaders(false);
+
+			return new ZipStream('archive.zip', $options);
+		}
+
+		throw new LycheeLogicException('Unsupported version of maennchen/zipstream-php');
+	}
+
+	protected function addFileToZip(
+		ZipStream $zip,
+		ZippablePhoto $zippable_photo,
+	): void {
+		if ($zippable_photo->title === null) {
+			$zip->addFileFromStream(name: $zippable_photo->file_name, stream: $zippable_photo->file->read());
+
+			return;
+		}
+
+		$options = new \ZipStream\Option\File();
+		$options->setComment($zippable_photo->title);
+		$options->setTime($zippable_photo->last_modification_date_time);
+		$zip->addFileFromStream(name: $zippable_photo->file_name, stream: $zippable_photo->file->read(), options: $options);
+	}
+}

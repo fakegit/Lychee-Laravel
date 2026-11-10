@@ -1,0 +1,90 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+return [
+    'title' => 'Administrační panel',
+    'overview' => 'Přehled',
+    'tools' => 'Nástroje',
+    'tool_groups' => [
+        'core' => 'Správa',
+        'monitoring' => 'Monitorování',
+        'extensions' => 'Rozšíření',
+    ],
+    'refresh' => 'Obnovit',
+    'metrics' => [
+        'photos_count' => 'Fotografie',
+        'albums_count' => 'Alba',
+        'users_count' => 'Uživatelé',
+        'storage_bytes' => 'Využité úložiště',
+        'queued_jobs' => 'Úlohy ve frontě',
+        'failed_jobs_24h' => 'Neúspěšné úlohy (24 h)',
+        'last_successful_job_at' => 'Poslední úspěšná úloha',
+    ],
+    'errors' => [
+        'partial' => 'Některé metriky se nepodařilo načíst.',
+    ],
+    'security' => [
+        'title' => 'Bezpečnostní upozornění',
+        'description' => 'Následující zranitelnosti se týkají vaší aktuální verze Lychee. Prosím, proveďte aktualizaci co nejdříve.',
+        'no_cvss' => '(bez skóre CVSS)',
+    ],
+    'update' => [
+        'title' => 'Stav aktualizace',
+        'update_available' => 'Je k dispozici novější verze (aktuální: :current, nejnovější: :latest).',
+        'git_update_available' => 'Vaše instalace je :count commitů za větví master.',
+    ],
+    'nsfw_config' => [
+        'title' => 'Detekce NSFW a moderace',
+        'tab_settings' => 'Nastavení',
+        'tab_presets' => 'Předvolby',
+        'description' => 'Nastavte automatickou detekci NSFW obsahu u nahraných fotografií. Fotografie jsou kontrolovány asynchronně pomocí externí klasifikační služby.',
+        'enable' => 'Povolit klasifikaci NSFW',
+        'preset' => 'Předvolba detekce',
+        'scan_trusted' => 'Kontrolovat důvěryhodné uživatele',
+        'section_general' => 'Obecné',
+        'section_actions' => 'Akce',
+        'actions_explanation' => 'Nastavte, co se stane při zjištění nálezu typu <b>Blokovat</b>, pro každou úroveň důvěry. Nálezy typu <b>Ke kontrole</b> vždy posílají uživatele s úrovní Kontrola a Dohled do moderace a u uživatelů s úrovní Důvěřuj, ale prověřuj a Důvěryhodný jsou automaticky schváleny.',
+        'sensitive_explanation' => 'Nálezy typu <b>Citlivé</b> u uživatelů s úrovní Kontrola jsou vždy odeslány do moderace. Pro ostatní úrovně důvěry následující nastavení určují, zda bude album fotografie označeno jako citlivé a co se stane, pokud fotografie nemá album.',
+        'sensitive_album' => 'Citlivé – akce pro album',
+        'sensitive_no_album' => 'Citlivé – postup bez alba',
+        'section_hide_on_scan' => 'Skrýt během kontroly',
+        'hide_on_scan_explanation' => 'Pro každou úroveň důvěry zvolte, zda mají být fotografie během probíhající NSFW kontroly dočasně skryty. Zabrání se tak zobrazení potenciálně problematického obsahu před dokončením kontroly.',
+        'hide_on_scan_warning' => 'Je-li povoleno, fotografie jsou během probíhající NSFW kontroly skryty (umístěny do fronty moderace).<br> Pokud klasifikátor NSFW selže nebo není dostupný, fotografie zůstane skryta, dokud ji administrátor ručně neschválí.',
+        'hide_monitor' => 'Skrýt fotografie uživatelů s úrovní Dohled během kontroly',
+        'hide_tbv' => 'Skrýt fotografie uživatelů s úrovní Důvěřuj, ale prověřuj během kontroly',
+        'hide_trusted' => 'Skrýt fotografie důvěryhodných uživatelů během kontroly',
+        'section_matrix' => 'Matice úrovní důvěry × nálezů',
+        'matrix_explanation' => 'Každá nahraná fotografie je zkontrolována klasifikátorem NSFW, který vrací nálezy ve třech úrovních závažnosti: <b>Blokovat</b> (explicitní obsah), <b>Ke kontrole</b> (sporný obsah) a <b>Citlivé</b> (mírný obsah). Akce provedená u každého nálezu závisí na úrovni důvěry uživatele, který fotografii nahrál. Tato tabulka shrnuje aktuální nastavení.',
+        'matrix_trust_level' => 'Úroveň důvěry',
+        'matrix_check' => 'Kontrola',
+        'matrix_monitor' => 'Dohled',
+        'matrix_tbv' => 'Důvěřuj, ale prověřuj',
+        'matrix_trusted' => 'Důvěryhodný',
+        'runtime_config' => 'Konfigurace běhu služby',
+        'presets' => 'Dostupné předvolby',
+        'key' => 'Klíč',
+        'value' => 'Hodnota',
+        'active' => 'Aktivní',
+        'block' => 'Blokovat',
+        'review' => 'Ke kontrole',
+        'sensitive' => 'Citlivé',
+        'none' => 'Žádné',
+        'matrix_moderate' => 'Moderovat',
+        'matrix_approve' => 'Schválit',
+        'matrix_mark_album' => 'Označit album',
+        'matrix_nothing' => 'Nic',
+        'legend_block' => 'Fotografie je trvale smazána.',
+        'legend_moderate' => 'Fotografie je zadržena ke kontrole administrátorem.',
+        'legend_approve' => 'Fotografie je přijata, nález je zaznamenán.',
+        'legend_mark_album' => 'Album fotografie je označeno jako citlivé.',
+        'legend_nothing' => 'Neprovede se žádná akce.',
+    ],
+    'nsfw_findings' => [
+        'title' => 'Nálezy NSFW',
+    ],
+];

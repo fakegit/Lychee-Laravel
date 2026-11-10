@@ -1,0 +1,184 @@
+<template>
+	<form v-if="oauths !== undefined" class="flex flex-col gap-4 relative max-w-md w-full text-sm rounded-md">
+		<div
+			:class="{
+				'flex justify-center gap-2 w-full': true,
+				'flex-col': !is_basic_auth_enabled,
+				'flex-row': is_basic_auth_enabled,
+			}"
+		>
+			<a
+				v-if="is_webauthn_enabled"
+				:class="{
+					'inline-block text-xl text-muted transition-all duration-300 hover:text-primary-400 cursor-pointer': true,
+					'hover:scale-150': is_basic_auth_enabled,
+					'hover:scale-105': !is_basic_auth_enabled,
+				}"
+				title="WebAuthn"
+				@click="openWebAuthn"
+			>
+				<UIcon name="lucide:key" />
+				<span v-if="!is_basic_auth_enabled" class="ml-2 text-base">{{ sprintf(trans("dialogs.login.auth_with"), "WebAuthn") }}</span>
+			</a>
+			<a
+				v-for="oauth in oauths"
+				:key="oauth.provider"
+				:href="oauth.url"
+				:class="{
+					'inline-block text-xl text-muted transition-all duration-300 hover:text-primary-400 cursor-pointer': true,
+					'hover:scale-150': is_basic_auth_enabled,
+					'hover:scale-105': !is_basic_auth_enabled,
+				}"
+				:title="oauth.provider"
+			>
+				<i class="items-center" :class="oauth.icon"></i>
+				<span v-if="!is_basic_auth_enabled" class="ml-2 text-base">{{ sprintf(trans("dialogs.login.auth_with"), oauth.provider) }}</span>
+			</a>
+		</div>
+		<template v-if="is_basic_auth_enabled">
+			<UFormField :label="identifierLabel">
+				<UInput id="username" v-model="username" autocomplete="username" :autofocus="true" class="w-full" />
+			</UFormField>
+			<UFormField :label="$t('dialogs.login.password')">
+				<InputPassword id="password" v-model="password" autocomplete="current-password" @keydown.enter="login" />
+				<UAlert v-if="invalidPassword" color="error" variant="soft" class="mt-2" :description="$t('dialogs.login.unknown_invalid')" />
+				<UAlert
+					v-if="too_many_attempts"
+					color="error"
+					variant="soft"
+					class="mt-2"
+					:description="$t('dialogs.gallery_unlock.too_many_attempts')"
+				/>
+			</UFormField>
+			<UCheckbox v-if="!hideRememberMe" v-model="rememberMe" :label="$t('dialogs.login.remember_me')" />
+			<div class="flex items-center gap-2 mt-4">
+				<UButton
+					v-if="closeCallback !== undefined"
+					color="neutral"
+					variant="soft"
+					class="flex-1 justify-center font-bold"
+					@click="props.closeCallback"
+				>
+					{{ $t("dialogs.button.cancel") }}
+				</UButton>
+				<UButton color="primary" variant="solid" class="flex-1 justify-center font-bold" @click="login">
+					{{ $t("dialogs.login.signin") }}
+				</UButton>
+			</div>
+		</template>
+		<div v-else class="flex items-center gap-2 mt-4">
+			<UButton
+				v-if="closeCallback !== undefined"
+				color="neutral"
+				variant="soft"
+				class="flex-1 justify-center font-bold"
+				@click="props.closeCallback"
+			>
+				{{ $t("dialogs.button.cancel") }}
+			</UButton>
+			<UButton color="neutral" variant="solid" class="flex-1 justify-center font-bold" @click="login">
+				{{ $t("dialogs.login.signin") }}
+			</UButton>
+		</div>
+	</form>
+</template>
+<script setup lang="ts">
+import { computed, ref } from "vue";
+import AuthService from "@/services/auth-service";
+import InputPassword from "@/v8/components/forms/basic/InputPassword.vue";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+import { storeToRefs } from "pinia";
+import { useTogglablesStateStore } from "@/stores/ModalsState";
+import { onMounted } from "vue";
+import { trans } from "laravel-vue-i18n";
+import { sprintf } from "@/utils/sprintf";
+import { useUserStore } from "@/stores/UserState";
+import { useClearViewerState } from "@/composables/useClearViewerState";
+
+const emits = defineEmits<{
+	"logged-in": [];
+}>();
+
+type OauthProvider = {
+	url: string;
+	icon: string;
+	provider: App.Enum.OauthProvidersType;
+};
+
+const props = defineProps<{
+	closeCallback?: () => void;
+	padding?: string;
+	hideRememberMe?: boolean;
+}>();
+
+const username = ref("");
+const password = ref("");
+const rememberMe = ref(false);
+const userStore = useUserStore();
+const { clearViewerState } = useClearViewerState();
+const togglableStore = useTogglablesStateStore();
+const lycheeStore = useLycheeStateStore();
+const { is_basic_auth_enabled, is_webauthn_enabled, is_email_login_enabled } = storeToRefs(lycheeStore);
+const { is_login_open, is_webauthn_open } = storeToRefs(togglableStore);
+const invalidPassword = ref(false);
+const too_many_attempts = ref(false);
+
+// With `email_login_enabled` the field accepts a username or an email address.
+const identifierLabel = computed(() => trans(is_email_login_enabled.value ? "dialogs.login.username_or_email" : "dialogs.login.username"));
+
+const oauths = ref<OauthProvider[] | undefined>(undefined);
+
+function login() {
+	invalidPassword.value = false;
+	too_many_attempts.value = false;
+	AuthService.login(username.value, password.value, rememberMe.value)
+		.then(() => {
+			is_login_open.value = false;
+			invalidPassword.value = false;
+			too_many_attempts.value = false;
+			clearViewerState();
+			// Init data depends on the user (e.g. face recognition availability).
+			// Kept out of this chain: its failures are not authentication errors.
+			// load() reports its own errors and leaves is_init false, in which case we must not
+			// continue with the guest data.
+			void lycheeStore
+				.refresh()
+				.then(() => {
+					if (lycheeStore.is_init) {
+						emits("logged-in");
+					}
+				})
+				.catch(() => {});
+		})
+		.catch((e) => {
+			too_many_attempts.value = e.response?.status === 429;
+			if (e.response && e.response.status === 401) {
+				invalidPassword.value = true;
+			}
+		});
+}
+
+function openWebAuthn() {
+	too_many_attempts.value = false;
+	is_login_open.value = false;
+	is_webauthn_open.value = true;
+	username.value = "";
+	password.value = "";
+	invalidPassword.value = false;
+}
+
+function redirectToOauth() {
+	if (is_basic_auth_enabled.value || is_webauthn_enabled.value || oauths.value?.length !== 1) {
+		return;
+	}
+
+	window.location.href = oauths.value[0].url;
+}
+
+onMounted(() => {
+	userStore.getOauthData().then((data) => {
+		oauths.value = data;
+		redirectToOauth();
+	});
+});
+</script>

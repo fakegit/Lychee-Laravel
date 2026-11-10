@@ -1,0 +1,79 @@
+<template>
+	<UHeader :toggle="false">
+		<template #left>
+			<OpenLeftMenu />
+		</template>
+		{{ $t("maintenance.title") }}
+	</UHeader>
+	<div class="text-muted text-center mt-2 p-2">
+		{{ $t("maintenance.description") }}
+	</div>
+	<div class="max-w-7xl mt-9 mx-auto flex flex-col divide-y divide-default w-full px-4 sm:px-6">
+		<MaintenanceOptimize />
+		<MaintenanceFlushCache />
+		<MaintenanceGenSizevariants :sv="2" />
+		<MaintenanceGenSizevariants :sv="3" />
+		<MaintenanceGenSizevariants :sv="4" />
+		<MaintenanceGenSizevariants :sv="5" />
+		<MaintenanceGenSizevariants :sv="8" />
+		<MaintenanceFixJobs />
+		<MaintenanceFixTree />
+		<MaintenanceFilesize />
+		<MaintenanceOldOrders v-if="rights?.modules.is_mod_webshop_enabled" />
+		<MaintenanceFulfillOrders v-if="rights?.modules.is_mod_webshop_enabled" />
+		<MaintenanceFulfillPrecompute />
+		<MaintenanceRecomputeTakenAtRange />
+		<MaintenanceBackfillAlbumSizes />
+		<MaintenanceRecomputeBuckets />
+		<MaintenanceFlushQueue />
+		<MaintenanceMissingPalettes />
+		<StatisticsIntegrity />
+		<MaintenanceCleaning path="filesystems.disks.extract-jobs.root" />
+		<MaintenanceCleaning path="filesystems.disks.image-jobs.root" />
+		<MaintenanceCleaning path="filesystems.disks.image-upload.root" />
+		<MaintenanceBulkScanNsfw v-if="rights?.modules.is_nsfw_classifier_enabled" />
+		<template v-if="is_face_recognition_enabled">
+			<MaintenanceBulkScanFaces />
+			<MaintenanceRunClustering />
+			<MaintenanceDestroyDismissedFaces />
+			<MaintenanceSyncFaceEmbeddings ref="syncFaceEmbeddingsRef" />
+			<MaintenanceResetFaceScanStatus />
+			<MaintenancePurgeOrphanFaceEmbeddings @purged="syncFaceEmbeddingsRef?.load()" />
+		</template>
+	</div>
+</template>
+<script setup lang="ts">
+import MaintenanceCleaning from "@/v8/components/maintenance/MaintenanceCleaning.vue";
+import MaintenanceFilesize from "@/v8/components/maintenance/MaintenanceFilesize.vue";
+import MaintenanceFixJobs from "@/v8/components/maintenance/MaintenanceFixJobs.vue";
+import MaintenanceFixTree from "@/v8/components/maintenance/MaintenanceFixTree.vue";
+import MaintenanceGenSizevariants from "@/v8/components/maintenance/MaintenanceGenSizevariants.vue";
+import MaintenanceOptimize from "@/v8/components/maintenance/MaintenanceOptimize.vue";
+import MaintenanceFlushCache from "@/v8/components/maintenance/MaintenanceFlushCache.vue";
+import OpenLeftMenu from "@/v8/components/headers/OpenLeftMenu.vue";
+import StatisticsIntegrity from "@/v8/components/maintenance/StatisticsIntegrity.vue";
+import MaintenanceMissingPalettes from "@/v8/components/maintenance/MaintenanceMissingPalettes.vue";
+import MaintenanceOldOrders from "@/v8/components/maintenance/MaintenanceOldOrders.vue";
+import MaintenanceFulfillOrders from "@/v8/components/maintenance/MaintenanceFulfillOrders.vue";
+import MaintenanceFulfillPrecompute from "@/v8/components/maintenance/MaintenanceFulfillPrecompute.vue";
+import MaintenanceRecomputeTakenAtRange from "@/v8/components/maintenance/MaintenanceRecomputeTakenAtRange.vue";
+import MaintenanceBackfillAlbumSizes from "@/v8/components/maintenance/MaintenanceBackfillAlbumSizes.vue";
+import MaintenanceRecomputeBuckets from "@/v8/components/maintenance/MaintenanceRecomputeBuckets.vue";
+import MaintenanceFlushQueue from "@/v8/components/maintenance/MaintenanceFlushQueue.vue";
+import MaintenanceBulkScanFaces from "@/v8/components/maintenance/MaintenanceBulkScanFaces.vue";
+import MaintenanceBulkScanNsfw from "@/v8/components/maintenance/MaintenanceBulkScanNsfw.vue";
+import MaintenanceRunClustering from "@/v8/components/maintenance/MaintenanceRunClustering.vue";
+import MaintenanceDestroyDismissedFaces from "@/v8/components/maintenance/MaintenanceDestroyDismissedFaces.vue";
+import MaintenanceSyncFaceEmbeddings from "@/v8/components/maintenance/MaintenanceSyncFaceEmbeddings.vue";
+import MaintenanceResetFaceScanStatus from "@/v8/components/maintenance/MaintenanceResetFaceScanStatus.vue";
+import MaintenancePurgeOrphanFaceEmbeddings from "@/v8/components/maintenance/MaintenancePurgeOrphanFaceEmbeddings.vue";
+import { storeToRefs } from "pinia";
+import { useGlobalRights } from "@/composables/useGlobalRights";
+import { useTemplateRef } from "vue";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+
+const lycheeStore = useLycheeStateStore();
+const { rights } = useGlobalRights();
+const { is_face_recognition_enabled } = storeToRefs(lycheeStore);
+const syncFaceEmbeddingsRef = useTemplateRef<InstanceType<typeof MaintenanceSyncFaceEmbeddings>>("syncFaceEmbeddingsRef");
+</script>

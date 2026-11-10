@@ -1,0 +1,309 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+return [
+	/*
+	|--------------------------------------------------------------------------
+	| Force HTTPS
+	|--------------------------------------------------------------------------
+	|
+	| When running behind a proxy, it may be necessary for the urls to be
+	| set as https for the reverse translation. You should set this if you
+	| want to force the https scheme.
+	*/
+	'force_https' => (bool) env('APP_FORCE_HTTPS', false),
+
+	/*
+	|--------------------------------------------------------------------------
+	| Log 404 errors
+	|--------------------------------------------------------------------------
+	|
+	| When enabled, all 404 errors are logged to the log file.
+	| This can be useful to track broken links or attempted attacks.
+	| True by default, so it can be set to false to avoid too large log files.
+	*/
+	'log_404_errors' => (bool) env('LOG_404_ERRORS', true),
+
+	/*
+	|--------------------------------------------------------------------------
+	| Enable v4 redirections
+	|--------------------------------------------------------------------------
+	|
+	| When using new front-end old links to /#albumID/PhotoID are broken.
+	| This provides here a way to avoid those.
+	*/
+	'legacy_v4_redirect' => (bool) env('LEGACY_V4_REDIRECT', false),
+
+	'legacy_v3_db_prefix' => env('DB_OLD_LYCHEE_PREFIX', '') !== '',
+
+	/*
+	|--------------------------------------------------------------------------
+	| Log Viewer
+	|--------------------------------------------------------------------------
+	|
+	| Log Viewer can be disabled, so it's no longer accessible via browser.
+	*/
+	'log-viewer' => (bool) env('LOG_VIEWER_ENABLED', false),
+
+	/*
+	|--------------------------------------------------------------------------
+	| Use S3 buckets instead of local hosting.
+	|--------------------------------------------------------------------------
+	|
+	| Put images on AWS instead of locally to save space.
+	*/
+	'use-s3' => (env('AWS_ACCESS_KEY_ID', '') !== '') && (bool) env('S3_ENABLED', false),
+
+	/*
+	|--------------------------------------------------------------------------
+	| Disable Basic Auth. This means that the only way to authenticate is via
+	| the API token, Webauthn or Oauth.
+	| This should only be toggled AFTER having set up the admin account and
+	| bound the Oauth client.
+	|--------------------------------------------------------------------------
+	*/
+	'disable-basic-auth' => (bool) env('DISABLE_BASIC_AUTH', false),
+
+	/*
+	|--------------------------------------------------------------------------
+	| Disable WebAuthn. This means that the only way to authenticate is via
+	| the API token, Basic Auth or Oauth.
+	|--------------------------------------------------------------------------
+	*/
+	'disable-webauthn' => (bool) env('DISABLE_WEBAUTHN', false),
+
+	/*
+	|--------------------------------------------------------------------------
+	| Hide Lychee SE from config to allow for easier video
+	|--------------------------------------------------------------------------
+	*/
+	'hide-lychee-SE' => (bool) env('HIDE_LYCHEE_SE_CONFIG', false),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Add latency on requests to simulate slower network. Time in ms.
+	 | Disabled on production environment.
+	 |--------------------------------------------------------------------------
+	 */
+	'latency' => env('APP_ENV', 'production') === 'production' ? 0 : (int) env('APP_DEBUG_LATENCY', 0),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Enable the v8
+	 |--------------------------------------------------------------------------
+	 |
+	 | This value determines whether v8 is served: the Nuxt-UI-based front-end
+	 | bundle (app-v8.ts) instead of the PrimeVue-based one (app.ts, v7), the
+	 | v8 features, and the v3 struct-of-arrays listing endpoints
+	 | (`/api/v3/Albums/*`, `/Search/*`, `/Map/*`, `/Flow`, `/Metrics`,
+	 | `/People`, `/Faces/*`), which answer 403 without it (Feature 109,
+	 | ADR-109-01).
+	 */
+	'v8' => (bool) env('V8_ENABLED', false),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Require the API requests to have the header "content-type: application/json"
+	 | or "content-type: multipart/form-data" depending on the type.
+	 |
+	 | Note that this prevents the use of the API from the API documentation page.
+	 |--------------------------------------------------------------------------
+	 */
+	'require-content-type' => (bool) env('REQUIRE_CONTENT_TYPE_ENABLED', true),
+
+	/*
+	|--------------------------------------------------------------------------
+	| Vite http proxy
+	|--------------------------------------------------------------------------
+	|
+	| This value determines whether we accept connection from the vite http proxy.
+	| This is not recommended as this will have some impact on the way sessions are handled,
+	| notably with gracefully reloading the page.
+	*/
+	'vite-http-proxy' => env('VITE_HTTP_PROXY_TARGET', '') !== '' ||
+		((bool) env('VITE_HTTP_PROXY_ENABLED', false)) !== false ||
+		((bool) env('VITE_LOCAL_DEV', false)) !== false,
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Disable import from server
+	 |--------------------------------------------------------------------------
+	 |
+	 | This value determines whether the import from server feature is disabled.
+	 | This is useful if you want to prevent users from importing files from the
+	 | server and want to make sure the admin has no rights either.
+	 |
+	 | Effectively, this increases the security by limiting the attack surface.
+	 | If the admin account is compromised, the attacker cannot use this feature to
+	 | read files from the server such as .env, /etc/passwd et al.
+	 */
+	'disable-import-from-server' => (bool) env('DISABLE_IMPORT_FROM_SERVER', false),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Enable Webshop
+	 |--------------------------------------------------------------------------
+	 |
+	 | This value determines whether the webshop feature is enabled.
+	 | Disabling it hides all webshop related features
+	 */
+	'webshop' => (bool) env('WEBSHOP_ENABLED', true),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Enable Webhooks
+	 |--------------------------------------------------------------------------
+	 |
+	 | When enabled, admins can configure outgoing webhooks that are triggered
+	 | on photo lifecycle events (photo.add, photo.move, photo.delete).
+	 | Disabled by default — set WEBHOOK_ENABLED=true to activate.
+	 */
+	'webhook' => (bool) env('WEBHOOK_ENABLED', false),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Webhook HTTP request timeout
+	 |--------------------------------------------------------------------------
+	 |
+	 | Controls how long (in seconds) Lychee waits for a webhook endpoint to
+	 | respond before treating the request as failed.
+	 */
+	'webhook_timeout_seconds' => (int) env('WEBHOOK_TIMEOUT_SECONDS', 10),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Location Decoding Rate Limit
+	 |--------------------------------------------------------------------------
+	 |
+	 | Controls how many reverse-geocoding requests per second Lychee may send
+	 | to the Nominatim service. Nominatim's usage policy requires at most 1
+	 | request per second; raise this only if you are running your own instance.
+	 | Set via LOCATION_DECODING_REQUESTS_PER_SECOND (default: 1).
+	 */
+	'location_decoding_requests_per_second' => max(1, (int) env('LOCATION_DECODING_REQUESTS_PER_SECOND', 1)),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Enable Vulnerability Check
+	 |--------------------------------------------------------------------------
+	 |
+	 | When enabled, Lychee periodically fetches the list of published security
+	 | advisories from the configured url.advisories.api_url and compares them
+	 | against the running version. Matching vulnerabilities are surfaced in the
+	 | diagnostic error panel (admin-only) and as a dismissable modal on login.
+	 | Enabled by default — set VULNERABILITY_CHECK_ENABLED=false to opt out.
+	 */
+	'vulnerability-check' => (bool) env('VULNERABILITY_CHECK_ENABLED', true),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Enable Update Check
+	 |--------------------------------------------------------------------------
+	 |
+	 | When enabled, admins can query whether the current installation is
+	 | up-to-date from the admin dashboard. The endpoint also returns the latest
+	 | available release version when it can be determined.
+	 | Enabled by default - set UPDATE_CHECK_ENABLED=false to opt out.
+	 */
+	'update-check' => (bool) env('UPDATE_CHECK_ENABLED', true),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Populate Request object macros while testing
+	 |--------------------------------------------------------------------------
+	 |
+	 | This is necessary for some unit tests that rely on the Request macros
+	 | being present. In production, these macros are populated via middleware.
+	 | However, in unit tests, the middleware may not be executed, leading to
+	 | missing macros and test failures.
+	 */
+	'populate-request-macros' => (bool) env('POPULATE_REQUEST_MACROS', false),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Enable AI Vision / Assisted Vision
+	 |--------------------------------------------------------------------------
+	 |
+	 | When enabled, users can use facial recognition and AI-powered features
+	 | such as face detection, person management, and photo clustering.
+	 | Requires ai_vision_enabled to be true in the database configs table
+	 | AND this feature flag to be enabled.
+	 */
+	'ai-vision' => (bool) env('AI_VISION_ENABLED', true),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | White Label
+	 |--------------------------------------------------------------------------
+	 |
+	 | When enabled, hides the Lychee name, links, and generator metadata
+	 | from the UI (footer, meta tag, misconfiguration warning).
+	 | Requires a Lychee Supporter Edition licence to take effect.
+	 | Set WHITE_LABEL_ENABLED=true in .env to activate.
+	 */
+	'white_label_enabled' => (bool) env('WHITE_LABEL_ENABLED', false),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Loading indicator
+	 |--------------------------------------------------------------------------
+	 |
+	 | URL of an animation (GIF, WebP, APNG, SVG...) replacing the Lychee
+	 | loading icon. A relative value resolves against the base path of the
+	 | install, e.g. LOADING_INDICATOR_URL=dist/loading.gif.
+	 | Requires a Lychee Supporter Edition licence to take effect.
+	 | When empty and white label is enabled, a plain spinner is shown.
+	 */
+	'loading_indicator_url' => trim((string) env('LOADING_INDICATOR_URL', '')),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Use fopen for URL imports instead of curl
+	 |--------------------------------------------------------------------------
+	 | curl mitigates issues with Time of Check to Time of Use (TOCTOU) attacks, but it may not be available in all environments.
+	 | Set USE_FOPEN_FOR_URL_IMPORTS=true in .env to use fopen instead of curl for URL imports.
+	 */
+	'use_fopen_for_url_imports' => (bool) env('USE_FOPEN_FOR_URL_IMPORTS', false),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Use system temp directory for uploads
+	 |--------------------------------------------------------------------------
+	 |
+	 | When enabled, Lychee uses PHP's sys_get_temp_dir() for temporary upload
+	 | files. On shared hosting where that directory is not readable/writable,
+	 | set USE_SYSTEM_TEMP_DIR=false to use storage/tmp/uploads_parts instead.
+	 */
+	'use-system-temp-dir' => (bool) env('USE_SYSTEM_TEMP_DIR', true),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Enable Caching
+	 |--------------------------------------------------------------------------
+	 |
+	 | When enabled, admins can configure Redis-backed caching from
+	 | the settings panel (cache_enabled, cache_ttl, cache_event_logging).
+	 | Disabled by default — set ENABLE_CACHING=true to activate.
+	 | Note: caching is only active when cache_enabled is also set to 1 in
+	 | the database settings.
+	 */
+	'enable-caching' => (bool) env('ENABLE_CACHING', false),
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Client-side cache
+	 |--------------------------------------------------------------------------
+	 |
+	 | When disabled, the front end (v7 and v8) reuses no stored API
+	 | response: the axios response cache is skipped and requests keep asking
+	 | the browser not to answer from its HTTP cache. Thumbnails stay cached.
+	 | Enabled by default — set CLIENT_CACHE_ENABLED=false to always fetch
+	 | from the server.
+	 */
+	'client-cache' => (bool) env('CLIENT_CACHE_ENABLED', true),
+];

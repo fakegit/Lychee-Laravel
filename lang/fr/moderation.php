@@ -1,0 +1,57 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Moderation page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Modération',
+    'description' => 'Vérifiez et approuvez les photos envoyées par les utilisateurs avec le niveau de confiance "Vérifier" avant qu’elles ne deviennent visibles publiquement.',
+    'approve_selected' => 'Approuver la sélection',
+    'delete_selected' => 'Supprimer la sélection',
+    'selected' => 'sélectionné(s)',
+    'no_pending' => 'Aucune photo en attente de modération.',
+    'approved' => 'Photos approuvées avec succès.',
+    'col_thumbnail' => 'Vignette',
+    'col_title' => 'Titre',
+    'col_owner' => 'Propriétaire',
+    'col_album' => 'Album',
+    'col_uploaded' => 'Envoyée',
+    'col_nsfw' => 'NSFW',
+    'nsfw_review' => 'Modération NSFW',
+    'overlay_confidence' => 'Confiance : :value %',
+    'overlay_area' => 'Zone : :value',
+    'overlay_mode_all' => 'NSFW : Tout',
+    'overlay_mode_block' => 'NSFW : Bloquer',
+    'overlay_mode_review' => 'NSFW : Réviser',
+    'overlay_mode_sensitive' => 'NSFW : Sensible',
+    // Feature 089: moderation history and NSFW findings review.
+    'tab_pending' => 'En attente',
+    'tab_history' => 'Historique',
+    'no_history' => 'Aucun historique de modération.',
+    'col_photo' => 'Photo',
+    'col_event' => 'Événement',
+    'col_by' => 'Par',
+    'col_date' => 'Date',
+    'event_held' => 'Retenu',
+    'event_approved' => 'Approuvé',
+    'source_upload' => 'Téléversement',
+    'source_nsfw_scan' => 'Analyse NSFW',
+    'history_title' => 'Modération',
+    'history_show_all' => 'Tout afficher (:count)',
+    'findings_title' => 'Détections NSFW',
+    'findings_description' => 'Passez en revue les détections NSFW et rejetez celles qui sont erronées. Les détections rejetées sont supprimées ; une nouvelle analyse peut les retrouver.',
+    'findings_empty' => 'Aucune détection NSFW.',
+    'findings_col_status' => 'Statut',
+    'findings_col_findings' => 'Détections',
+    'findings_col_albums' => 'Albums',
+    'findings_hidden' => 'Masqué',
+    'findings_dismiss' => 'Rejeter',
+    'findings_dismiss_all' => 'Rejeter toutes les détections de cette photo',
+    'findings_dismiss_selected' => 'Rejeter la sélection',
+    'findings_confirm_header' => 'Rejeter les détections',
+    'findings_confirm' => 'Rejeter toutes les détections de :count photo(s) ? Elles seront supprimées.',
+    'findings_dismissed' => 'Détections rejetées.',
+    'findings_error' => 'Les détections NSFW n’ont pas pu être chargées ou modifiées.',
+];

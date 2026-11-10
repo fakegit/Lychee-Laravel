@@ -1,0 +1,190 @@
+<template>
+	<!-- <UDashboardNavbar
+		class="w-full"
+		v-if="!is_full_screen"
+	> -->
+	<UHeader
+		v-if="photoStore.photo"
+		id="lychee_toolbar_container"
+		:toggle="false"
+		:ui="{ root: 'bg-transparent backdrop-blur-none border-b-0' }"
+		:class="{
+			'absolute top-0 left-0 w-full flex-none z-10 rounded-none': true,
+			'opacity-100 md:opacity-0 md:hover:opacity-100': is_full_screen || is_slideshow_active,
+			'opacity-100': !is_full_screen && !is_slideshow_active,
+		}"
+	>
+		<template #left>
+			<GoBack @go-back="emits('goBack')" />
+		</template>
+
+		<template #right>
+			<UTooltip
+				v-if="!albumStore.rights?.can_edit && rights?.root_album?.can_highlight"
+				:text="photoStore.photo!.is_highlighted ? $t('gallery.photo.actions.unhighlight') : $t('gallery.photo.actions.highlight')"
+			>
+				<UButton
+					variant="ghost"
+					icon="lucide:flag"
+					:ui="{ leadingIcon: photoStore.photo!.is_highlighted ? FILL_OVERRIDE_CLASS : '' }"
+					:class="photoStore.photo!.is_highlighted ? 'text-yellow-500' : 'text-white hover:text-yellow-500'"
+					color="neutral"
+					@click="emits('toggleHighlight')"
+				/>
+			</UTooltip>
+			<div class="flex items-center gap-1.5" :class="is_slideshow_active ? 'hidden' : 'flex'">
+				<UTooltip
+					v-if="photoStore.isSphereCapable"
+					:text="photoStore.isSphereFlat ? $t('gallery.photo.actions.show_sphere') : $t('gallery.photo.actions.show_flat')"
+				>
+					<UButton
+						variant="ghost"
+						:icon="photoStore.isSphereFlat ? 'lucide:rotate-3d' : 'lucide:rectangle-horizontal'"
+						color="neutral"
+						:aria-label="photoStore.isSphereFlat ? $t('gallery.photo.actions.show_sphere') : $t('gallery.photo.actions.show_flat')"
+						@click="photoStore.toggleSphereFlat()"
+					/>
+				</UTooltip>
+				<UButton v-if="is_slideshow_enabled" variant="ghost" icon="lucide:play" color="neutral" @click="emits('toggleSlideShow')" />
+				<UButton
+					v-if="albumStore.rights?.can_access_original && photoStore.photo!.size_variants.original?.url"
+					variant="ghost"
+					icon="lucide:app-window"
+					class="font-bold"
+					color="neutral"
+					@click="openInNewTab(photoStore.photo!.size_variants.original.url)"
+				/>
+				<UButton
+					v-if="albumStore.rights?.can_download"
+					variant="ghost"
+					icon="lucide:cloud-download"
+					color="neutral"
+					@click="
+						() => {
+							isDownloadOpen = !isDownloadOpen;
+						}
+					"
+				/>
+				<UButton
+					v-if="canEditCurrentPhoto"
+					variant="ghost"
+					icon="lucide:pencil"
+					color="neutral"
+					@click="
+						() => {
+							is_photo_edit_open = !is_photo_edit_open;
+						}
+					"
+				/>
+				<UButton
+					v-if="!is_exif_disabled"
+					variant="ghost"
+					icon="lucide:info"
+					color="neutral"
+					@click="
+						() => {
+							are_details_open = !are_details_open;
+						}
+					"
+				/>
+				<UTooltip v-if="is_photo_share_card_enabled" :text="$t('gallery.photo.actions.share_card')">
+					<UButton
+						variant="ghost"
+						icon="lucide:qr-code"
+						color="neutral"
+						@click="
+							() => {
+								isPhotoShareCardOpen = !isPhotoShareCardOpen;
+							}
+						"
+					/>
+				</UTooltip>
+				<!-- FR-099-03: PDFs have no dock, so move and delete live here. -->
+				<template v-if="isPdfEditable">
+					<UTooltip v-if="albumStore.rights?.can_move_content" :text="$t('gallery.photo.actions.move')">
+						<UButton
+							variant="ghost"
+							icon="lucide:folder"
+							color="neutral"
+							:aria-label="$t('gallery.photo.actions.move')"
+							@click="emits('toggleMove')"
+						/>
+					</UTooltip>
+					<UTooltip :text="$t('gallery.photo.actions.delete')">
+						<UButton
+							variant="ghost"
+							icon="lucide:trash-2"
+							color="neutral"
+							class="hover:text-red-600"
+							:aria-label="$t('gallery.photo.actions.delete')"
+							@click="emits('toggleDelete')"
+						/>
+					</UTooltip>
+				</template>
+			</div>
+		</template>
+	</UHeader>
+	<!-- </UDashboardNavbar> -->
+	<DownloadPhoto v-model:open="isDownloadOpen" />
+	<PhotoShareCard v-model:open="isPhotoShareCardOpen" />
+</template>
+<script setup lang="ts">
+import { computed, ref } from "vue";
+import DownloadPhoto from "@/v8/components/modals/DownloadPhoto.vue";
+import PhotoShareCard from "@/v8/components/modals/PhotoShareCard.vue";
+import { storeToRefs } from "pinia";
+import { useTogglablesStateStore } from "@/stores/ModalsState";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+import GoBack from "./GoBack.vue";
+import { ImageViewMode, usePhotoStore } from "@/stores/PhotoState";
+import { useAlbumStore } from "@/stores/AlbumState";
+import { useUserStore } from "@/stores/UserState";
+import { useGlobalRights } from "@/composables/useGlobalRights";
+import { FILL_OVERRIDE_CLASS } from "@/v8/icons";
+
+const emits = defineEmits<{
+	toggleDetails: [];
+	toggleEdit: [];
+	toggleSlideShow: [];
+	goBack: [];
+	toggleHighlight: [];
+	toggleMove: [];
+	toggleDelete: [];
+}>();
+
+const photoStore = usePhotoStore();
+const albumStore = useAlbumStore();
+const userStore = useUserStore();
+const togglableStore = useTogglablesStateStore();
+const { is_full_screen, is_photo_edit_open, are_details_open, is_slideshow_active } = storeToRefs(togglableStore);
+const isDownloadOpen = ref(false);
+const isPhotoShareCardOpen = ref(false);
+const lycheeStore = useLycheeStateStore();
+const { rights } = useGlobalRights();
+const { is_exif_disabled, is_slideshow_enabled, is_photo_share_card_enabled } = storeToRefs(lycheeStore);
+
+function openInNewTab(url: string) {
+	window?.open(url, "_blank")?.focus();
+}
+
+/**
+ * `albumStore.rights.can_edit` is album-wide, not per-photo - fine for a
+ * regular Album/TagAlbum/PersonAlbum, but not for a smart album, whose
+ * photos are no longer guaranteed all-owned-by-viewer once
+ * `SA_override_visibility` is enabled while `AlbumPolicy::canEdit()` always
+ * grants smart albums edit rights regardless of which photos it surfaces.
+ * Mirrors `PhotoPanel.vue`'s own `canEditCurrentPhoto`.
+ */
+const canEditCurrentPhoto = computed(() => {
+	if (!albumStore.rights?.can_edit) {
+		return false;
+	}
+	if (albumStore.smartAlbum !== undefined) {
+		return photoStore.photo?.owner_id === userStore.user?.id;
+	}
+	return true;
+});
+
+/** Where the dock would show for this PDF (see `PhotoPanel.vue`), its actions show in the header instead. */
+const isPdfEditable = computed(() => photoStore.imageViewMode === ImageViewMode.Pdf && canEditCurrentPhoto.value && !is_photo_edit_open.value);
+</script>

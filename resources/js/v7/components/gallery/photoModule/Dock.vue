@@ -1,0 +1,195 @@
+<template>
+	<div
+		v-if="photoStore.photo"
+		:class="{
+			'absolute top-0 w-full sm:w-1/2 left-1/2 -translate-x-1/2': true,
+			'lg:hover:opacity-100 transition-opacity duration-500 ease-in-out': !isTouchDevice(),
+			'opacity-50 lg:opacity-20': !isTouchDevice() && !isFullTransparency,
+			'opacity-75': isTouchDevice() && !isFullTransparency,
+			'opacity-0': isFullTransparency,
+			'z-20 mt-14 sm:mt-0': true,
+			'sm:h-1/4': !props.isNarrowMenu,
+			'h-14': props.isNarrowMenu,
+			hidden: is_slideshow_active,
+			'hidden sm:block': are_details_open,
+		}"
+	>
+		<span class="absolute left-1/2 -translate-x-1/2 p-1 min-w-[25%] w-full filter-shadow text-center">
+			<DockButton
+				v-if="photoStore.live_photo_controls !== undefined"
+				v-tooltip.bottom="$t('gallery.motion_photo')"
+				pi="bullseye"
+				:aria-label="$t('gallery.motion_photo')"
+				:aria-pressed="photoStore.is_live_playing"
+				:class="photoStore.is_live_playing ? 'text-primary-500' : 'text-white lg:hover:text-primary-500'"
+				@click="photoStore.live_photo_controls?.toggle()"
+			/>
+			<template v-if="props.canEdit">
+				<DockButton
+					v-if="photoStore.photo.is_highlighted"
+					v-tooltip.bottom="$t('gallery.photo.actions.unhighlight')"
+					:aria-label="$t('gallery.photo.actions.unhighlight')"
+					pi="flag-fill"
+					class="text-yellow-500 lg:hover:text-yellow-100"
+					@click="emits('toggleHighlight')"
+				/>
+				<DockButton
+					v-else
+					v-tooltip.bottom="$t('gallery.photo.actions.highlight')"
+					:aria-label="$t('gallery.photo.actions.highlight')"
+					pi="flag"
+					class="text-white lg:hover:text-yellow-500"
+					@click="emits('toggleHighlight')"
+				/>
+				<DockButton
+					v-tooltip.bottom="$t('gallery.photo.actions.set_album_header')"
+					:aria-label="$t('gallery.photo.actions.set_album_header')"
+					v-if="!isTimeline"
+					pi="image"
+					class="lg:hover:text-primary-500 text-white"
+					@click="emits('setAlbumHeader')"
+				/>
+				<DockButton
+					v-if="isWatermarkerEnabled"
+					v-tooltip.bottom="$t('gallery.album.hero.watermark')"
+					:aria-label="$t('gallery.album.hero.watermark')"
+					pi="barcode"
+					class="lg:hover:text-primary-500 text-white"
+					@click="watermark"
+				/>
+				<DockButton
+					v-if="isFaceRecognitionEnabled"
+					v-tooltip.bottom="$t('people.scan_faces')"
+					:aria-label="$t('people.scan_faces')"
+					pi="face-smile"
+					class="lg:hover:text-primary-500 text-white"
+					@click="scanFaces"
+				/>
+				<template v-if="lycheeStore.can_rotate">
+					<DockButton
+						icon="counterclockwise"
+						:aria-label="$t('gallery.photo.actions.rotate_ccw')"
+						class="fill-white lg:hover:fill-primary-500"
+						@click="emits('rotatePhotoCCW')"
+					/>
+					<DockButton
+						icon="clockwise"
+						:aria-label="$t('gallery.photo.actions.rotate_cw')"
+						class="fill-white lg:hover:fill-primary-500"
+						@click="emits('rotatePhotoCW')"
+					/>
+				</template>
+				<DockButton
+					v-tooltip.bottom="$t('gallery.photo.actions.move')"
+					:aria-label="$t('gallery.photo.actions.move')"
+					pi="folder"
+					class="lg:hover:text-primary-500 text-white"
+					@click="emits('toggleMove')"
+				/>
+				<DockButton
+					v-tooltip.bottom="$t('gallery.photo.actions.delete')"
+					:aria-label="$t('gallery.photo.actions.delete')"
+					icon="trash"
+					class="fill-red-600 lg:fill-white lg:hover:fill-red-600"
+					@click="emits('toggleDelete')"
+				/>
+			</template>
+		</span>
+	</div>
+</template>
+<script setup lang="ts">
+import PhotoService from "@/services/photo-service";
+import FaceDetectionService from "@/services/face-detection-service";
+import DockButton from "./DockButton.vue";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+import { useTogglablesStateStore } from "@/stores/ModalsState";
+import { isTouchDevice } from "@/utils/keybindings-utils";
+import { storeToRefs } from "pinia";
+import { computed } from "vue";
+import { useToast } from "primevue/usetoast";
+import { trans } from "laravel-vue-i18n";
+import { useGlobalRights } from "@/composables/useGlobalRights";
+import { useRoute } from "vue-router";
+import { usePhotoStore } from "@/stores/PhotoState";
+import { useAlbumStore } from "@/stores/AlbumState";
+import { needSizeVariantsWatermark } from "@/utils/watermarkHelpers";
+
+const toast = useToast();
+const lycheeStore = useLycheeStateStore();
+const photoStore = usePhotoStore();
+const albumStore = useAlbumStore();
+const { rights } = useGlobalRights();
+const togglableStore = useTogglablesStateStore();
+const { is_slideshow_active, are_details_open } = storeToRefs(togglableStore);
+
+const props = defineProps<{
+	isNarrowMenu: boolean;
+	/** Edit buttons; without them the dock holds only the live button (FR-100-06). */
+	canEdit: boolean;
+}>();
+
+const isWatermarkerEnabled = computed(
+	() =>
+		rights.value?.modules.is_watermarker_enabled &&
+		photoStore.photo &&
+		albumStore.rights?.can_edit &&
+		needSizeVariantsWatermark(photoStore.photo.size_variants),
+);
+
+const isFaceRecognitionEnabled = computed(() => lycheeStore.is_face_recognition_enabled && photoStore.photo && albumStore.rights?.can_edit);
+
+function watermark() {
+	if (!photoStore.photo) {
+		return;
+	}
+
+	PhotoService.watermark([photoStore.photo.id]).then(() => {
+		toast.add({
+			severity: "success",
+			detail: trans("toasts.success"),
+			life: 3000,
+		});
+	});
+}
+
+function scanFaces() {
+	if (!photoStore.photo) {
+		return;
+	}
+
+	FaceDetectionService.scanPhotos([photoStore.photo.id])
+		.then(() => {
+			toast.add({
+				severity: "success",
+				detail: trans("people.scan_success"),
+				life: 3000,
+			});
+		})
+		.catch((e) => {
+			toast.add({
+				severity: "error",
+				detail: e.response?.data?.message || trans("toasts.error"),
+				life: 3000,
+			});
+		});
+}
+
+const emits = defineEmits<{
+	toggleHighlight: [];
+	setAlbumHeader: [];
+	rotatePhotoCCW: [];
+	rotatePhotoCW: [];
+	toggleMove: [];
+	toggleDelete: [];
+}>();
+
+const route = useRoute();
+const isTimeline = computed(() => route.name === "timeline");
+
+const isFullTransparency = computed(() => {
+	if (isTouchDevice()) {
+		return lycheeStore.is_mobile_dock_full_transparency_enabled;
+	}
+	return lycheeStore.is_desktop_dock_full_transparency_enabled;
+});
+</script>

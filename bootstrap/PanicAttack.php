@@ -1,5 +1,16 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+/**
+ * Basic PanicAttack class.
+ *
+ * Used only in case of emergency: e.g. vendor not found
+ */
 class PanicAttack
 {
 	private $title = '';
@@ -50,7 +61,7 @@ class PanicAttack
 	{
 		$this->title = 'ROOT';
 		$this->code = 403;
-		$this->message = '<span class="important">This is the root directory and it MUST NOT BE PUBLICALLY ACCESSIBLE.</span><br>
+		$this->message = '<span class="important">This is the root directory and MUST NOT BE PUBLICLY ACCESSIBLE.</span><br>
 		To access Lychee, go <a href="public/">here</a>.';
 		$this->displaySimpleError();
 	}
@@ -112,6 +123,21 @@ class PanicAttack
 		$this->displaySimpleError();
 	}
 
+	/*
+	 |--------------------------------------------------------------------------
+	 | Catch error on missing ldap extension.
+	 |--------------------------------------------------------------------------
+	 | When the ldap extension is not loaded, we display a nice error.
+	 | This is a sanity check to prevent the user from seeing a blank page with an error in the top left
+	*/
+	public function ldap() {
+		$this->title = 'Missing PHP Extension';
+		$this->code = 500;
+		$this->message = 'The PHP extension "ldap" is required but not loaded. Please install and enable it to run Lychee.';
+		$this->displaySimpleError();
+	}
+
+
 	/**
 	 *  dispatcher.
 	 */
@@ -128,12 +154,5 @@ class PanicAttack
 				$this->$fun();
 			}
 		}
-		// var_dump($error_message);
-		// if nothing has been catched so far
-		// $this->title = 'Error !';
-		// $this->code = 500;
-		// $this->message = 'Oups, something went wrong !';
-		// $this->message = $last_error['message'];
-		// $this->displaySimpleError();
 	}
 }

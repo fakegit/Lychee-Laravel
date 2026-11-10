@@ -1,0 +1,238 @@
+<template>
+	<UModal v-if="photoStore.photo" :open="true" fullscreen :dismissible="false" :close="false" :ui="{ content: 'bg-black' }">
+		<template #content>
+			<PhotoHeader
+				@toggle-slide-show="emits('toggleSlideShow')"
+				@go-back="emits('goBack')"
+				@toggle-highlight="emits('toggleHighlight')"
+				@toggle-move="emits('toggleMove')"
+				@toggle-delete="emits('toggleDelete')"
+			/>
+			<UMain class="relative mt-(--ui-header-height)">
+				<UDashboardGroup storageKey="photo-panel" storage="local" :persistent="true" class="relative w-full h-full overflow-hidden bg-black">
+					<PhotoDetails v-if="!is_exif_disabled && !isLeftToRight" :is-map-visible="props.isMapVisible" />
+					<div class="w-0 flex-auto relative">
+						<div class="animate-zoomIn w-full h-full">
+							<Transition :name="disable_swipe_effect ? '' : photoStore.transition">
+								<PhotoBox
+									:key="photoStore.photo.id"
+									:is-zoom-enabled="true"
+									@go-back="emits('goBack')"
+									@next="emits('next')"
+									@previous="emits('previous')"
+									@rotate-overlay="emits('rotateOverlay')"
+								/>
+							</Transition>
+						</div>
+						<NextPrevious
+							v-if="photoStore.photo.previous_photo_id !== null && !is_slideshow_active"
+							:photo-id="photoStore.photo.previous_photo_id"
+							:is_next="false"
+							:style="photoStore.previousStyle"
+						/>
+						<NextPrevious
+							v-if="photoStore.photo.next_photo_id !== null && !is_slideshow_active"
+							:photo-id="photoStore.photo.next_photo_id"
+							:is_next="true"
+							:style="photoStore.nextStyle"
+						/>
+						<Overlay v-if="!is_exif_disabled && photoStore.imageViewMode !== ImageViewMode.Pdf" />
+						<PhotoRatingOverlay />
+						<Dock
+							v-if="isDockShown"
+							:can-edit="canEditCurrentPhoto"
+							@toggle-highlight="emits('toggleHighlight')"
+							@set-album-header="emits('setAlbumHeader')"
+							@rotate-photo-c-c-w="emits('rotatePhotoCCW')"
+							@rotate-photo-c-w="emits('rotatePhotoCW')"
+							@toggle-move="emits('toggleMove')"
+							@toggle-delete="emits('toggleDelete')"
+						/>
+					</div>
+					<PhotoDetails v-if="!is_exif_disabled && isLeftToRight" :is-map-visible="props.isMapVisible" />
+				</UDashboardGroup>
+			</UMain>
+		</template>
+	</UModal>
+</template>
+<script setup lang="ts">
+import { useLycheeStateStore } from "@/stores/LycheeState";
+import { useTogglablesStateStore } from "@/stores/ModalsState";
+import { storeToRefs } from "pinia";
+import { computed, onMounted } from "vue";
+import NextPrevious from "./NextPrevious.vue";
+import Overlay from "./Overlay.vue";
+import PhotoRatingOverlay from "./PhotoRatingOverlay.vue";
+import PhotoDetails from "@/v8/components/drawers/PhotoDetails.vue";
+import PhotoHeader from "@/v8/components/headers/PhotoHeader.vue";
+import Dock from "./Dock.vue";
+import { shouldIgnoreKeystroke } from "@/utils/keybindings-utils";
+import { onUnmounted } from "vue";
+import { useDebounceFn } from "@vueuse/core";
+import PhotoBox from "./PhotoBox.vue";
+import { ImageViewMode, usePhotoStore } from "@/stores/PhotoState";
+import { useAlbumStore } from "@/stores/AlbumState";
+import { useUserStore } from "@/stores/UserState";
+import { useLtRorRtL } from "@/utils/Helpers.js";
+
+const lycheeStore = useLycheeStateStore();
+const togglableStore = useTogglablesStateStore();
+const photoStore = usePhotoStore();
+const albumStore = useAlbumStore();
+const userStore = useUserStore();
+const { isLTR } = useLtRorRtL();
+
+const { is_exif_disabled, is_scroll_to_navigate_photos_enabled, disable_swipe_effect } = storeToRefs(lycheeStore);
+const { is_photo_edit_open, is_slideshow_active } = storeToRefs(togglableStore);
+
+const isLeftToRight = computed(() => isLTR());
+
+/**
+ * `albumStore.rights.can_edit` is album-wide, not per-photo. That's fine for
+ * a regular Album/TagAlbum/PersonAlbum (every photo shown there is already
+ * covered by that same right), but not for a smart album: its photos are no
+ * longer guaranteed all-owned-by-viewer once `SA_override_visibility` is
+ * enabled, yet `AlbumPolicy::canEdit()` always grants smart albums edit
+ * rights regardless of which photos it actually surfaces. So the dock also
+ * requires an owner-id match (`photoStore.photo.owner_id`, only populated
+ * for smart albums - see `PhotoResource.php`) whenever the current album is
+ * a smart album.
+ */
+const canEditCurrentPhoto = computed(() => {
+	if (!albumStore.rights?.can_edit) {
+		return false;
+	}
+	if (albumStore.smartAlbum !== undefined) {
+		return photoStore.photo?.owner_id === userStore.user?.id;
+	}
+	return true;
+});
+
+/** Editors get the edit buttons; any viewer of a live photo gets its play button (FR-100-06). */
+const isDockShown = computed(
+	() =>
+		(canEditCurrentPhoto.value || photoStore.live_photo_controls !== undefined) &&
+		!is_photo_edit_open.value &&
+		!photoStore.is_zoomed &&
+		photoStore.imageViewMode !== ImageViewMode.Pdf,
+);
+
+const props = defineProps<{
+	isMapVisible: boolean;
+}>();
+
+const emits = defineEmits<{
+	toggleHighlight: [];
+	setAlbumHeader: [];
+	rotatePhotoCCW: [];
+	rotatePhotoCW: [];
+	toggleMove: [];
+	toggleDelete: [];
+	updated: [];
+	rotateOverlay: [];
+	toggleSlideShow: [];
+	goBack: [];
+	next: [];
+	previous: [];
+}>();
+
+// We use debounce to avoid multiple skipping too many pictures in one go via the trackpad
+function scrollTo(event: WheelEvent) {
+	if (shouldIgnoreKeystroke()) {
+		return;
+	}
+
+	if (is_photo_edit_open.value) {
+		// We do nothing! Otherwise we are switching photos without noticing.
+		// especially with trackpads.
+		return;
+	}
+
+	if (!is_scroll_to_navigate_photos_enabled.value) {
+		return;
+	}
+
+	// FR-082-10: the wheel zooms the sphere, it never changes photo.
+	if (photoStore.isSphereView && !is_slideshow_active.value) {
+		return;
+	}
+
+	// FR-099-01: the wheel scrolls the PDF pages, it never changes photo.
+	if (photoStore.imageViewMode === ImageViewMode.Pdf) {
+		return;
+	}
+
+	const delta = Math.sign(event.deltaY);
+	if (delta > 0) {
+		emits("next");
+	} else if (delta < 0) {
+		emits("previous");
+	}
+}
+const debouncedScrollTo = useDebounceFn(scrollTo, 10);
+
+onMounted(() => {
+	window.addEventListener("wheel", debouncedScrollTo);
+});
+
+onUnmounted(() => {
+	window.removeEventListener("wheel", debouncedScrollTo);
+});
+</script>
+
+<style lang="css">
+[dir="ltr"] {
+	--next-enter-from: 5%;
+	--next-leave-to: -5%;
+
+	--previous-enter-from: -5%;
+	--previous-leave-to: 5%;
+}
+
+[dir="rtl"] {
+	--next-enter-from: -5%;
+	--next-leave-to: 5%;
+
+	--previous-enter-from: 5%;
+	--previous-leave-to: -5%;
+}
+.slide-next-leave-active,
+.slide-next-enter-active {
+	transition:
+		transform 0.5s cubic-bezier(0.165, 0.84, 0.44, 1),
+		opacity 0.2s cubic-bezier(0.445, 0.05, 0.55, 0.95);
+}
+.slide-next-enter-from {
+	transform: translate(var(--next-enter-from), 0);
+	opacity: 0;
+}
+.slide-next-enter-to,
+.slide-next-leave-from {
+	transform: translate(0, 0);
+	opacity: 1;
+}
+.slide-next-leave-to {
+	transform: translate(var(--next-leave-to), 0);
+	opacity: 0;
+}
+
+.slide-previous-leave-active,
+.slide-previous-enter-active {
+	transition:
+		transform 0.5s cubic-bezier(0.165, 0.84, 0.44, 1),
+		opacity 0.2s cubic-bezier(0.445, 0.05, 0.55, 0.95);
+}
+.slide-previous-enter-from {
+	transform: translate(var(--previous-enter-from), 0);
+	opacity: 0;
+}
+.slide-previous-enter-to,
+.slide-previous-leave-from {
+	transform: translate(0, 0);
+	opacity: 1;
+}
+.slide-previous-leave-to {
+	transform: translate(var(--previous-leave-to), 0);
+	opacity: 0;
+}
+</style>

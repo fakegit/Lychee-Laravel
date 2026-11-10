@@ -1,0 +1,510 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Http\Controllers\Gallery;
+
+use App\Actions\Album\Create;
+use App\Actions\Album\CreatePersonAlbum;
+use App\Actions\Album\CreateTagAlbum;
+use App\Actions\Album\Delete;
+use App\Actions\Album\ListAlbums;
+use App\Actions\Album\Merge;
+use App\Actions\Album\Move;
+use App\Actions\Album\SetHeader;
+use App\Actions\Album\SetProtectionPolicy;
+use App\Actions\Album\SetSmartProtectionPolicy;
+use App\Actions\Album\Transfer;
+use App\Actions\Album\Unlock;
+use App\Enum\AlbumTitleColor;
+use App\Enum\AlbumTitlePosition;
+use App\Enum\SizeVariantType;
+use App\Events\AlbumChildrenChanged;
+use App\Events\AlbumPhotoSortingChanged;
+use App\Events\AlbumRouteCacheUpdated;
+use App\Events\AlbumSaved;
+use App\Events\AlbumTagsChanged;
+use App\Events\PersonAlbumSaved;
+use App\Events\TagAlbumSaved;
+use App\Exceptions\Internal\LycheeLogicException;
+use App\Exceptions\UnauthenticatedException;
+use App\Http\Requests\Album\AddAlbumRequest;
+use App\Http\Requests\Album\AddPersonAlbumRequest;
+use App\Http\Requests\Album\AddTagAlbumRequest;
+use App\Http\Requests\Album\DeleteAlbumsRequest;
+use App\Http\Requests\Album\DeleteTrackRequest;
+use App\Http\Requests\Album\MergeAlbumsRequest;
+use App\Http\Requests\Album\MoveAlbumsRequest;
+use App\Http\Requests\Album\RenameAlbumRequest;
+use App\Http\Requests\Album\SetAlbumProtectionPolicyRequest;
+use App\Http\Requests\Album\SetAlbumTrackRequest;
+use App\Http\Requests\Album\SetAsCoverRequest;
+use App\Http\Requests\Album\SetAsHeaderRequest;
+use App\Http\Requests\Album\SetPinnedRequest;
+use App\Http\Requests\Album\TargetListAlbumRequest;
+use App\Http\Requests\Album\TransferAlbumRequest;
+use App\Http\Requests\Album\UnlockAlbumRequest;
+use App\Http\Requests\Album\UpdateAlbumHeaderRequest;
+use App\Http\Requests\Album\UpdateAlbumRequest;
+use App\Http\Requests\Album\UpdatePersonAlbumRequest;
+use App\Http\Requests\Album\UpdateTagAlbumRequest;
+use App\Http\Requests\Album\WatermarkAlbumRequest;
+use App\Http\Requests\Traits\HasVisitorIdTrait;
+use App\Http\Resources\Editable\EditableBaseAlbumResource;
+use App\Http\Resources\Models\TargetAlbumResource;
+use App\Http\Resources\Models\Utils\AlbumProtectionPolicy;
+use App\Jobs\RecomputeAlbumPhotoBucketsJob;
+use App\Jobs\RecomputeAlbumUserThumbsJob;
+use App\Jobs\RecomputeChildAlbumBucketsJob;
+use App\Jobs\WatermarkerJob;
+use App\Models\Album;
+use App\Models\Extensions\BaseAlbum;
+use App\Models\PersonAlbum;
+use App\Models\Photo;
+use App\Models\SizeVariant;
+use App\Models\Tag;
+use App\Models\TagAlbum;
+use App\Services\TitleSplitter;
+use App\SmartAlbums\BaseSmartAlbum;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Auth;
+
+/**
+ * Controller responsible for an album.
+ */
+class AlbumController extends Controller
+{
+	use HasVisitorIdTrait;
+
+	public const COMPACT_HEADER = 'compact';
+	public const MAP_HEADER = 'map';
+
+	/**
+	 * Create an album.
+	 */
+	public function createAlbum(AddAlbumRequest $request): string
+	{
+		$owner_id = Auth::id() ?? throw new UnauthenticatedException();
+		$create = new Create($owner_id);
+
+		return $create->create($request->title(), $request->parent_album())->id;
+	}
+
+	/**
+	 * Create a tag album.
+	 */
+	public function createTagAlbum(AddTagAlbumRequest $request, CreateTagAlbum $create): string
+	{
+		// Root
+		AlbumRouteCacheUpdated::dispatch('');
+
+		return $create->create($request->title(), $request->tags(), $request->is_and())->id;
+	}
+
+	/**
+	 * Create a person album.
+	 */
+	public function createPersonAlbum(AddPersonAlbumRequest $request, CreatePersonAlbum $create): string
+	{
+		AlbumRouteCacheUpdated::dispatch('');
+
+		return $create->create($request->title(), $request->personIds(), $request->is_and())->id;
+	}
+
+	/**
+	 * Update the info of an Album.
+	 */
+	public function updateAlbum(UpdateAlbumRequest $request, SetHeader $set_header): EditableBaseAlbumResource
+	{
+		$album = $request->album();
+		if ($album === null) {
+			// @codeCoverageIgnoreStart
+			throw new LycheeLogicException('album is null');
+			// @codeCoverageIgnoreEnd
+		}
+		$album->title = $request->title();
+		$album->description = $request->description();
+		$album->license = $request->license();
+		$album->album_thumb_aspect_ratio = $request->aspectRatio();
+		$album->copyright = $request->copyright();
+		$album->photo_sorting = $request->photoSortingCriterion();
+		$album->album_sorting = $request->albumSortingCriterion();
+		$album->photo_layout = $request->photoLayout();
+		$album->is_pinned = $request->is_pinned();
+		$album->cover_id = $request->coverPhoto()?->id;
+		if ($request->publishedAtProvided()) {
+			$album->published_at = $request->publishedAt();
+		}
+
+		$album->album_timeline = $request->album_timeline();
+		$album->photo_timeline = $request->photo_timeline();
+		if ($request->isDateScrubberEnabledProvided()) {
+			$album->is_date_scrubber_enabled = $request->is_date_scrubber_enabled();
+		}
+
+		if ($request->tagsProvided()) {
+			$tag_models = Tag::from($request->tags());
+			$changes = $album->tags()->sync($tag_models->pluck('id')->all());
+			$changed_tag_ids = array_values(array_unique([...$changes['attached'], ...$changes['detached']]));
+			AlbumTagsChanged::dispatchIf($changed_tag_ids !== [], $changed_tag_ids);
+		}
+
+		$album = $set_header->do(
+			album: $album,
+			is_compact: $request->is_compact(),
+			photo: $request->photo(),
+			shall_override: true,
+			is_map: $request->is_map_header(),
+		);
+
+		// The album's effective album sort column governs its direct
+		// children's `bucket_key` (FR-092-12): only a change of that column
+		// rewrites keys. A change of only the order or the granularity
+		// rewrites nothing, but the children listing (ordering, ids) is
+		// stale: AlbumSaved below covers $album's own tag and its parent's
+		// children listing, not $album's own children listing.
+		$child_column_changed = self::effectiveColumnChanged($album, 'album_sorting_col', 'album_sorting_order');
+		RecomputeChildAlbumBucketsJob::dispatchIf($child_column_changed, $album->id);
+		AlbumChildrenChanged::dispatchIf($album->wasChanged(['album_sorting_col', 'album_sorting_order', 'album_timeline']), [$album->id]);
+
+		// Same for the album's photos (FR-092-11). These columns live on
+		// `base_albums`, written through `$album->base_class`, whose dirty
+		// tracking is the one that matters. The job dispatches its own
+		// cache eviction once its write landed; an order or granularity
+		// change only evicts the album's cached photo listing.
+		$photo_column_changed = self::effectiveColumnChanged($album->base_class, 'sorting_col', 'sorting_order');
+		RecomputeAlbumPhotoBucketsJob::dispatchIf($photo_column_changed, $album->id);
+		AlbumPhotoSortingChanged::dispatchIf(!$photo_column_changed && $album->base_class->wasChanged(['sorting_order', 'photo_timeline']), [$album->id]);
+
+		AlbumSaved::dispatch([$album->id], [$album->parent_id]);
+
+		return EditableBaseAlbumResource::fromModel($album);
+	}
+
+	/**
+	 * Update the info of a Tag Album.
+	 */
+	public function updateTagAlbum(UpdateTagAlbumRequest $request): EditableBaseAlbumResource
+	{
+		$album = $request->album();
+		if ($album === null) {
+			// @codeCoverageIgnoreStart
+			throw new LycheeLogicException('album is null');
+			// @codeCoverageIgnoreEnd
+		}
+		$album->title = $request->title();
+		$title_split = TitleSplitter::split($album->title);
+		$album->title_base = $title_split->base;
+		$album->title_index = $title_split->index;
+		$album->description = $request->description();
+		$album->copyright = $request->copyright();
+		$album->photo_sorting = $request->photoSortingCriterion();
+		$album->photo_layout = $request->photoLayout();
+		$album->photo_timeline = $request->photo_timeline();
+		if ($request->isDateScrubberEnabledProvided()) {
+			$album->is_date_scrubber_enabled = $request->is_date_scrubber_enabled();
+		}
+		$album->is_pinned = $request->is_pinned();
+		$album->is_and = $request->is_and();
+		$album->save();
+
+		$tag_models = Tag::from($request->tags());
+		$album->tags()->sync($tag_models->pluck('id')->all());
+		RecomputeAlbumUserThumbsJob::dispatch(RecomputeAlbumUserThumbsJob::KIND_TAG, $album->id);
+
+		TagAlbumSaved::dispatch([$album->id]);
+
+		// Root
+		return EditableBaseAlbumResource::fromModel($album);
+	}
+
+	/**
+	 * Update the info of a Person Album.
+	 */
+	public function updatePersonAlbum(UpdatePersonAlbumRequest $request): EditableBaseAlbumResource
+	{
+		$album = $request->album();
+		if ($album === null) {
+			// @codeCoverageIgnoreStart
+			throw new LycheeLogicException('album is null');
+			// @codeCoverageIgnoreEnd
+		}
+		$album->title = $request->title();
+		$title_split = TitleSplitter::split($album->title);
+		$album->title_base = $title_split->base;
+		$album->title_index = $title_split->index;
+		$album->description = $request->description();
+		$album->copyright = $request->copyright();
+		$album->photo_sorting = $request->photoSortingCriterion();
+		$album->photo_layout = $request->photoLayout();
+		$album->photo_timeline = $request->photo_timeline();
+		if ($request->isDateScrubberEnabledProvided()) {
+			$album->is_date_scrubber_enabled = $request->is_date_scrubber_enabled();
+		}
+		$album->is_pinned = $request->is_pinned();
+		$album->is_and = $request->is_and();
+		$album->save();
+
+		$album->persons()->sync($request->personIds());
+		RecomputeAlbumUserThumbsJob::dispatch(RecomputeAlbumUserThumbsJob::KIND_PERSON, $album->id);
+
+		PersonAlbumSaved::dispatch($album);
+
+		return EditableBaseAlbumResource::fromModel($album);
+	}
+
+	/**
+	 * Update the protection policy of an Abstract Album.
+	 */
+	public function updateProtectionPolicy(
+		SetAlbumProtectionPolicyRequest $request,
+		SetProtectionPolicy $set_protection_policy,
+		SetSmartProtectionPolicy $set_smart_protection_policy,
+	): AlbumProtectionPolicy {
+		if ($request->album() instanceof BaseSmartAlbum) {
+			return $this->updateProtectionPolicySmart($request->album(), $request->albumProtectionPolicy()->is_public, $set_smart_protection_policy);
+		}
+
+		/** @var BaseAlbum $album */
+		$album = $request->album();
+
+		return $this->updateProtectionPolicyBase(
+			$album,
+			$request->albumProtectionPolicy(),
+			$request->isPasswordProvided(),
+			$request->password(),
+			$set_protection_policy
+		);
+	}
+
+	private function updateProtectionPolicySmart(BaseSmartAlbum $album, bool $is_public, SetSmartProtectionPolicy $set_smart_protection_policy): AlbumProtectionPolicy
+	{
+		$set_smart_protection_policy->do($album, $is_public);
+
+		return AlbumProtectionPolicy::ofSmartAlbum($album);
+	}
+
+	private function updateProtectionPolicyBase(
+		BaseAlbum $album,
+		AlbumProtectionPolicy $protection_policy,
+		bool $shall_set_password,
+		#[\SensitiveParameter] ?string $password,
+		SetProtectionPolicy $set_protection_policy): AlbumProtectionPolicy
+	{
+		$set_protection_policy->do(
+			$album,
+			$protection_policy,
+			$shall_set_password,
+			$password
+		);
+
+		return AlbumProtectionPolicy::ofBaseAlbum($album->refresh());
+	}
+
+	/**
+	 * Delete the album and all of its pictures.
+	 *
+	 * @param DeleteAlbumsRequest $request the request
+	 * @param Delete              $delete  the delete action
+	 */
+	public function delete(DeleteAlbumsRequest $request, Delete $delete): void
+	{
+		$delete->do($request->albumIds());
+	}
+
+	/**
+	 * Get the list of albums.
+	 *
+	 * @return array<string|int,TargetAlbumResource>
+	 */
+	public function getTargetListAlbums(TargetListAlbumRequest $request, ListAlbums $list_albums): array
+	{
+		$albums = $request->albums();
+		$parent_id = $albums->count() > 0 ? $albums->first()->parent_id : null;
+
+		return TargetAlbumResource::collect($list_albums->do($albums, $parent_id, null, editable_only: true));
+	}
+
+	/**
+	 * Merge albums. The first of the list is the destination of the merge.
+	 */
+	public function merge(MergeAlbumsRequest $request, Merge $merge): void
+	{
+		$request->albums()->each(fn (Album $album) => AlbumRouteCacheUpdated::dispatch($album->id));
+		$merge->do($request->album(), $request->albums());
+	}
+
+	/**
+	 * Move multiple albums into another album.
+	 */
+	public function move(MoveAlbumsRequest $request, Move $move): void
+	{
+		$request->albums()->each(fn (Album $album) => AlbumRouteCacheUpdated::dispatch($album->id));
+		$move->do($request->album(), $request->albums());
+	}
+
+	/**
+	 * Transfer the ownership of the album to another user.
+	 */
+	public function transfer(TransferAlbumRequest $request, Transfer $transfer): void
+	{
+		$transfer->do($request->album(), $request->user2()->id);
+	}
+
+	/**
+	 * Set the album cover (the square thumb).
+	 */
+	public function cover(SetAsCoverRequest $request): void
+	{
+		$album = $request->album();
+		$album->cover_id = ($album->cover_id === $request->photo()->id) ? null : $request->photo()->id;
+		$album->save();
+
+		$this->dispatchSaved($album);
+	}
+
+	/**
+	 * Set the album header (the hero banner).
+	 */
+	public function header(SetAsHeaderRequest $request, SetHeader $set_header): void
+	{
+		$album = $set_header->do($request->album(), $request->is_compact(), $request->photo());
+
+		AlbumSaved::dispatch([$album->id], [$album->parent_id]);
+	}
+
+	/**
+	 * Update the album header customization (title color, position, focus point).
+	 */
+	public function updateAlbumHeader(UpdateAlbumHeaderRequest $request): EditableBaseAlbumResource
+	{
+		$album = $request->album();
+		$album->title_color = $request->titleColor() ?? AlbumTitleColor::WHITE;
+		$album->title_position = $request->titlePosition() ?? AlbumTitlePosition::TOP_LEFT;
+		$album->header_photo_focus = $request->headerPhotoFocus();
+		$album->save();
+
+		AlbumSaved::dispatch([$album->id], [$album->parent_id]);
+
+		return EditableBaseAlbumResource::fromModel($album);
+	}
+
+	/**
+	 * Rename an album.
+	 */
+	public function rename(RenameAlbumRequest $request): void
+	{
+		$album = $request->album();
+		$album->title = $request->title();
+		$title_split = TitleSplitter::split($album->title);
+		$album->title_base = $title_split->base;
+		$album->title_index = $title_split->index;
+		$album->save();
+
+		$this->dispatchSaved($album);
+	}
+
+	/**
+	 * Set the pinned status of an album.
+	 */
+	public function setPinned(SetPinnedRequest $request): void
+	{
+		$album = $request->album();
+		$album->is_pinned = $request->is_pinned();
+		$album->save();
+
+		$this->dispatchSaved($album);
+	}
+
+	/**
+	 * Dispatches the type-appropriate "saved" event for the given album.
+	 *
+	 * Several endpoints (`cover`, `rename`, `setPinned`) accept any
+	 * `BaseAlbum` (`Album`/`TagAlbum`/`PersonAlbum`), since `cover_id`,
+	 * title, and `is_pinned` are all shared `base_albums` attributes, but
+	 * only a plain `Album` carries a `parent_id`.
+	 */
+	private function dispatchSaved(BaseAlbum $album): void
+	{
+		match (true) {
+			$album instanceof Album => AlbumSaved::dispatch([$album->id], [$album->parent_id]),
+			$album instanceof TagAlbum => TagAlbumSaved::dispatch([$album->id]),
+			$album instanceof PersonAlbum => PersonAlbumSaved::dispatch($album),
+			default => null,
+		};
+	}
+
+	/**
+	 * Provided the albumID and password, return whether the album can be accessed or not.
+	 */
+	public function unlock(UnlockAlbumRequest $request, Unlock $unlock): void
+	{
+		$unlock->do($request->album(), $request->password());
+	}
+
+	/**
+	 * Upload a track for the Album.
+	 */
+	public function setTrack(SetAlbumTrackRequest $request): void
+	{
+		$request->album()->setTrack($request->file);
+	}
+
+	/**
+	 * Delete a track from the Album.
+	 */
+	public function deleteTrack(DeleteTrackRequest $request): void
+	{
+		$request->album()->deleteTrack();
+	}
+
+	/**
+	 * Watermark all SizeVariants of photos in an album.
+	 *
+	 * Dispatches a WatermarkerJob for each SizeVariant where short_path_watermarked is not set.
+	 */
+	public function watermarkAlbumPhotos(WatermarkAlbumRequest $request): void
+	{
+		$album = $request->album();
+
+		// Get all photos in the album and process their size variants
+		// Filter variants that need watermarking and dispatch jobs
+		$album->photos->each(fn (Photo $photo) => $photo->size_variants->toCollection()
+			->filter(fn (?SizeVariant $v) => $this->shouldWatermark($v))
+			->each(fn (?SizeVariant $v) => WatermarkerJob::dispatch($v, $photo->owner_id)));
+	}
+
+	private function shouldWatermark(?SizeVariant $size_variant): bool
+	{
+		if ($size_variant === null || $size_variant->type === SizeVariantType::PLACEHOLDER) {
+			return false;
+		}
+		if ($size_variant->type === SizeVariantType::ORIGINAL && !request()->configs()->getValueAsBool('watermark_original')) {
+			return false;
+		}
+
+		return !$size_variant->is_watermarked;
+	}
+
+	/**
+	 * Whether the last save changed the effective sort column: the column
+	 * itself, or the order switching between set and unset (an album's
+	 * sorting only applies when both are set).
+	 */
+	private static function effectiveColumnChanged(Model $model, string $column, string $order): bool
+	{
+		if ($model->wasChanged($column)) {
+			return true;
+		}
+		if (!$model->wasChanged($order)) {
+			return false;
+		}
+
+		return (($model->getPrevious()[$order] ?? null) === null) !== (($model->getAttributes()[$order] ?? null) === null);
+	}
+}

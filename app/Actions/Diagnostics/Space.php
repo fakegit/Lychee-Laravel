@@ -1,34 +1,34 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\Actions\Diagnostics;
 
 use App\Metadata\DiskUsage;
 
 class Space
 {
-	use Line;
-
-	/** @var LycheeVersion */
-	private $diskUsage;
-
-	public function __construct(DiskUsage $diskUsage)
+	public function __construct(private DiskUsage $disk_usage)
 	{
-		$this->diskUsage = $diskUsage;
 	}
 
 	/**
 	 * get space used by Lychee.
 	 *
-	 * @return array
+	 * @return string[] array of messages
 	 */
 	public function get(): array
 	{
-		$infos = [''];
-		$infos[] = $this->line('Lychee total space:', $this->diskUsage->get_lychee_space());
-		$infos[] = $this->line('Upload folder space:', $this->diskUsage->get_lychee_upload_space());
-		$infos[] = $this->line('System total space:', $this->diskUsage->get_total_space());
-		$infos[] = $this->line('System free space:', $this->diskUsage->get_free_space() . ' ('
-			. $this->diskUsage->get_free_percent() . ')');
+		$infos = [];
+		$infos[] = Diagnostics::line('Lychee total space:', $this->disk_usage->get_lychee_space());
+		$infos[] = Diagnostics::line('Upload folder space:', $this->disk_usage->get_lychee_upload_space());
+		$infos[] = Diagnostics::line('System total space:', $this->disk_usage->get_total_space());
+		$infos[] = Diagnostics::line('System free space:', $this->disk_usage->get_free_space() . ' ('
+			. $this->disk_usage->get_free_percent() . ')');
 
 		return $infos;
 	}

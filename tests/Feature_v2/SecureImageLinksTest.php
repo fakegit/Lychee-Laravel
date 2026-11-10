@@ -1,0 +1,133 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+/**
+ * We don't care for unhandled exceptions in tests.
+ * It is the nature of a test to throw an exception.
+ * Without this suppression we had 100+ Linter warning in this file which
+ * don't help anything.
+ *
+ * @noinspection PhpDocMissingThrowsInspection
+ * @noinspection PhpUnhandledExceptionInspection
+ */
+
+namespace Tests\Feature_v2;
+
+use App\Models\Configs;
+use Illuminate\Support\Facades\URL;
+use Tests\Feature_v2\Base\BaseApiWithDataTest;
+
+class SecureImageLinksTest extends BaseApiWithDataTest
+{
+	private function setSecureLink()
+	{
+		Configs::set('secure_image_link_enabled', '1');
+	}
+
+	private function setTemporaryLink()
+	{
+		Configs::set('temporary_image_link_enabled', '1');
+	}
+
+	public function tearDown(): void
+	{
+		Configs::set('temporary_image_link_enabled', '0');
+		Configs::set('secure_image_link_enabled', '0');
+		parent::tearDown();
+	}
+
+	public function testSignedImage(): void
+	{
+		$this->setTemporaryLink();
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => $this->album4->id]);
+		$this->assertOk($response);
+		$url = $response->json('photos.0.size_variants.medium.url');
+		$this->assertStringContainsString('/image/medium/', $url);
+
+		$response = $this->get($url);
+		$this->assertNotFound($response);
+		$response->assertSeeText('File not found'); // We mocked the file !
+	}
+
+	public function testExpiredSignature(): void
+	{
+		$this->setTemporaryLink();
+		$expired_url = URL::temporarySignedRoute('image', now()->subMinutes(10), ['path' => 'c3/3d/c661c594a5a781cd44db06828783.png']);
+		$response = $this->get($expired_url);
+		$this->assertForbidden($response);
+		$response->assertSeeText('Link expired');
+	}
+
+	public function testBrokenSignature(): void
+	{
+		$this->setTemporaryLink();
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => $this->album4->id]);
+		$this->assertOk($response);
+		$url = $response->json('photos.0.size_variants.medium.url');
+		$this->assertStringContainsString('/image/medium/', $url);
+
+		$unsigned_url = explode('?', $url)[0];
+		$response = $this->get($unsigned_url);
+		$this->assertForbidden($response);
+	}
+
+	public function testBrokenSignature2(): void
+	{
+		$this->setTemporaryLink();
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => $this->album4->id]);
+		$this->assertOk($response);
+		$url = $response->json('photos.0.size_variants.medium.url');
+		$this->assertStringContainsString('/image/medium/', $url);
+
+		$unsigned_url = explode('?', $url)[0];
+		$response = $this->get($unsigned_url . '?signature=broken_signature');
+		$this->assertForbidden($response);
+	}
+
+	public function testEncryptedImages(): void
+	{
+		$this->setSecureLink();
+
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => $this->album4->id]);
+		$this->assertOk($response);
+		$url = $response->json('photos.0.size_variants.medium.url');
+		$this->assertStringContainsString('/image/', $url);
+
+		$response = $this->get($url);
+		$this->assertNotFound($response);
+		$response->assertSeeText('File not found'); // We mocked the file !
+	}
+
+	public function testBrokenEncryption(): void
+	{
+		$this->setSecureLink();
+		$broken_url = URL::route('image', ['path' => 'broken_path']);
+		$response = $this->get($broken_url);
+		$this->assertForbidden($response);
+		$response->assertSeeText('Invalid payload');
+	}
+
+	public function testDisabledSecureImageLinkIsForbidden(): void
+	{
+		Configs::set('temporary_image_link_enabled', '0');
+		Configs::set('secure_image_link_enabled', '0');
+
+		$broken_url = URL::route('image', ['path' => 'broken_path']);
+		$response = $this->get($broken_url);
+		$this->assertUnauthorized($response);
+	}
+
+	public function testPathTraversalIsForbidden(): void
+	{
+		$this->setTemporaryLink();
+		$path = URL::route('image', ['path' => 'c3/3d/c661c594a5a781cd44db06828783.png']);
+		$traversal_path = str_replace('c3/3d/c661c594a5a781cd44db06828783.png', '../.env', $path);
+		$response = $this->actingAs($this->userMayUpload1)->get($traversal_path);
+		$this->assertStatus($response, 418);
+	}
+}

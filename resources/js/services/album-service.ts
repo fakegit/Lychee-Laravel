@@ -1,0 +1,371 @@
+import axios, { AxiosRequestConfig, type AxiosResponse } from "axios";
+import Constants from "./constants";
+import { AxiosCacheInstance } from "axios-cache-interceptor";
+
+export type CreateAlbumData = {
+	title: string;
+	parent_id: string | null;
+};
+
+export type CreateTagAlbumData = {
+	title: string;
+	tags: string[];
+	is_and: boolean;
+};
+
+export type UpdateAbumData = {
+	album_id: string;
+	title: string;
+	slug: string | null;
+	license: string | null;
+	description: string | null;
+	photo_sorting_column: App.Enum.ColumnSortingPhotoType | null;
+	photo_sorting_order: App.Enum.OrderSortingType | null;
+	album_sorting_column: App.Enum.ColumnSortingAlbumType | null;
+	album_sorting_order: App.Enum.OrderSortingType | null;
+	album_aspect_ratio: App.Enum.AspectRatioType | null;
+	photo_layout: App.Enum.PhotoLayoutType | null;
+	copyright: string | null;
+	tags?: string[];
+	header_id: string | null;
+	cover_id: string | null;
+	is_compact: boolean;
+	is_map_header: boolean;
+	is_pinned: boolean;
+	album_timeline: App.Enum.TimelineAlbumGranularity | null;
+	photo_timeline: App.Enum.TimelinePhotoGranularity | null;
+	// Feature 071 (FR-071-02): optional - omitting leaves the existing override untouched; `null` follows the global setting.
+	is_date_scrubber_enabled?: boolean | null;
+	// Feature 068 (FR-068-13): optional - omitting leaves the existing value
+	// untouched; `null` clears it. ISO-8601 string with an explicit offset.
+	published_at?: string | null;
+};
+
+export type UpdateAlbumHeaderData = {
+	album_id: string;
+	title_color: App.Enum.AlbumTitleColor | null;
+	title_position: App.Enum.AlbumTitlePosition | null;
+	header_photo_focus: { x: number; y: number } | null;
+};
+
+export type UpdateTagAlbumData = {
+	album_id: string;
+	title: string;
+	slug: string | null;
+	tags: string[];
+	description: string | null;
+	photo_sorting_column: App.Enum.ColumnSortingPhotoType | null;
+	photo_sorting_order: App.Enum.OrderSortingType | null;
+	copyright: string | null;
+	photo_layout: App.Enum.PhotoLayoutType | null;
+	photo_timeline: App.Enum.TimelinePhotoGranularity | null;
+	// Feature 071 (FR-071-02): optional - omitting leaves the existing override untouched; `null` follows the global setting.
+	is_date_scrubber_enabled?: boolean | null;
+	is_pinned: boolean;
+	is_and: boolean;
+};
+
+export type CreatePersonAlbumData = {
+	title: string;
+	persons: string[];
+	is_and: boolean;
+};
+
+export type UpdatePersonAlbumData = {
+	album_id: string;
+	title: string;
+	slug: string | null;
+	persons: string[];
+	description: string | null;
+	photo_sorting_column: App.Enum.ColumnSortingPhotoType | null;
+	photo_sorting_order: App.Enum.OrderSortingType | null;
+	copyright: string | null;
+	photo_layout: App.Enum.PhotoLayoutType | null;
+	photo_timeline: App.Enum.TimelinePhotoGranularity | null;
+	// Feature 071 (FR-071-02): optional - omitting leaves the existing override untouched; `null` follows the global setting.
+	is_date_scrubber_enabled?: boolean | null;
+	is_pinned: boolean;
+	is_and: boolean;
+};
+
+export type UpdateProtectionPolicyData = {
+	album_id: string;
+	password: string | undefined;
+	is_public: boolean;
+	is_link_required: boolean;
+	is_nsfw: boolean;
+	grants_download: boolean;
+	grants_full_photo_access: boolean;
+	grants_upload: boolean;
+};
+
+const AlbumService = {
+	clearCache(album_id: string | null = null): void {
+		const axiosWithCache = axios as unknown as AxiosCacheInstance;
+		if (!album_id) {
+			// @ts-expect-error  we now what we are doing here.
+			axiosWithCache.storage.clear();
+		} else {
+			// Clear legacy endpoint cache
+			for (let page = 1; page <= 10; page++) {
+				axiosWithCache.storage.remove(`album_${album_id}_page${page}`);
+			}
+			// Clear new paginated endpoint caches
+			axiosWithCache.storage.remove(`album_head_${album_id}`);
+			axiosWithCache.storage.remove(`album_tags_${album_id}`);
+			for (let page = 1; page <= 50; page++) {
+				axiosWithCache.storage.remove(`album_albums_${album_id}_page${page}`);
+				axiosWithCache.storage.remove(`album_photos_${album_id}_page${page}`);
+			}
+			// Clear v3 subalbum-children caches.
+			axiosWithCache.storage.remove(`album_v3_children_buckets_${album_id}`);
+			axiosWithCache.storage.remove(`album_v3_children_${album_id}`);
+			axiosWithCache.storage.remove(`album_v3_children_rights_${album_id}`);
+			// Clear v3 photo-listing caches (Feature 065) — mirrors the
+			// subalbum-children entries above. `photo_v3_details_*`'s
+			// per-request digest suffix isn't enumerable here (mirrors
+			// `getPhotos()`'s own filtered-request cache-key comment above) —
+			// left to expire naturally via TTL, an accepted limitation.
+			axiosWithCache.storage.remove(`photo_v3_buckets_${album_id}`);
+			axiosWithCache.storage.remove(`photo_v3_ratios_${album_id}`);
+			// Map header points (Feature 086).
+			axiosWithCache.storage.remove(`map_v3_album_${album_id}`);
+		}
+	},
+
+	clearAlbums(): void {
+		const axiosWithCache = axios as unknown as AxiosCacheInstance;
+		axiosWithCache.storage.remove("albums");
+		// Clear every v3 root-listing cache entry too — this is the same
+		// "invalidate the root listing" call
+		// site every mutation that could affect it (create/delete/move/
+		// rename/visibility/unlock/pin) already calls.
+		axiosWithCache.storage.remove("albums_v3_root_config");
+		axiosWithCache.storage.remove("albums_v3_smart");
+		axiosWithCache.storage.remove("albums_v3_tags");
+		axiosWithCache.storage.remove("albums_v3_tags_rights");
+		for (const scope of ["own", "shared"] as const) {
+			axiosWithCache.storage.remove(`albums_v3_persons_${scope}`);
+			axiosWithCache.storage.remove(`albums_v3_pinned_${scope}`);
+			axiosWithCache.storage.remove(`albums_v3_root_buckets_${scope}`);
+			axiosWithCache.storage.remove(`albums_v3_root_${scope}`);
+			axiosWithCache.storage.remove(`albums_v3_root_rights_${scope}`);
+		}
+	},
+
+	getAll(): Promise<AxiosResponse<App.Http.Resources.Collections.RootAlbumResource>> {
+		const requester = axios as unknown as AxiosCacheInstance;
+		return requester.get(`${Constants.getApiUrl()}Albums`, { data: {}, id: "albums" });
+	},
+
+	getHead(album_id: string): Promise<AxiosResponse<App.Http.Resources.Models.HeadAbstractAlbumResource>> {
+		const requester = axios as unknown as AxiosCacheInstance;
+		return requester.get(`${Constants.getApiUrl()}Album::head`, {
+			params: { album_id: album_id },
+			data: {},
+			id: `album_head_${album_id}`,
+		});
+	},
+
+	getAlbums(album_id: string, page: number = 1): Promise<AxiosResponse<App.Http.Resources.Collections.PaginatedAlbumsResource>> {
+		const requester = axios as unknown as AxiosCacheInstance;
+		return requester.get(`${Constants.getApiUrl()}Album::albums`, {
+			params: { album_id: album_id, page: page },
+			data: {},
+			id: `album_albums_${album_id}_page${page}`,
+		});
+	},
+
+	/**
+	 * @param force - Skip the cached entry and refresh it with a new response.
+	 *                Needed after in-place photo edits because the cache key of a
+	 *                filtered request is not enumerable by `clearCache()`.
+	 */
+	getPhotos(
+		album_id: string,
+		page: number = 1,
+		tag_ids: number[] | null = null,
+		tag_logic: string = "OR",
+		person_id: string | null = null,
+		force: boolean = false,
+	): Promise<AxiosResponse<App.Http.Resources.Collections.PaginatedPhotosResource>> {
+		const requester = axios as unknown as AxiosCacheInstance;
+
+		let param = "";
+		if (tag_ids && tag_ids.length > 0) {
+			param += `&${tag_ids.map((v) => `tag_ids[]=${v}`).join("&")}`;
+			param += `&tag_logic=${tag_logic}`;
+		}
+		if (person_id) {
+			param += `&person_id=${encodeURIComponent(person_id)}`;
+		}
+
+		// Cache key includes active filters for proper cache isolation
+		let cacheKey = `album_photos_${album_id}_page${page}`;
+		if (tag_ids && tag_ids.length > 0) {
+			cacheKey += `_tags${tag_ids.join(",")}_${tag_logic}`;
+		}
+		if (person_id) {
+			cacheKey += `_person${person_id}`;
+		}
+
+		return requester.get(`${Constants.getApiUrl()}Album::photos?album_id=${album_id}&page=${page}${param}`, {
+			data: {},
+			id: cacheKey,
+			cache: force ? { override: true } : undefined,
+		});
+	},
+
+	unlock(album_id: string, password: string, signal?: AbortSignal): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Album::unlock`, { album_id: album_id, password: password }, { signal: signal });
+	},
+
+	getLayout(): Promise<AxiosResponse<App.Http.Resources.GalleryConfigs.PhotoLayoutConfig>> {
+		return axios.get(`${Constants.getApiUrl()}Gallery::getLayout`, { data: {} });
+	},
+
+	createAlbum(data: CreateAlbumData): Promise<AxiosResponse<string>> {
+		// Album creation is serialised server-side, a 409 means the lock timed out and nothing was created.
+		return axios.post(`${Constants.getApiUrl()}Album`, data, { conflictRetries: 5 });
+	},
+
+	createTag(data: CreateTagAlbumData): Promise<AxiosResponse<string>> {
+		return axios.post(`${Constants.getApiUrl()}TagAlbum`, data);
+	},
+
+	updateAlbum(data: UpdateAbumData): Promise<AxiosResponse> {
+		return axios.patch(`${Constants.getApiUrl()}Album`, data);
+	},
+
+	updateAlbumHeader(data: UpdateAlbumHeaderData): Promise<AxiosResponse> {
+		return axios.patch(`${Constants.getApiUrl()}Album::header`, data);
+	},
+
+	updateTag(data: UpdateTagAlbumData): Promise<AxiosResponse> {
+		return axios.patch(`${Constants.getApiUrl()}TagAlbum`, data);
+	},
+
+	createPerson(data: CreatePersonAlbumData): Promise<AxiosResponse<string>> {
+		return axios.post(`${Constants.getApiUrl()}PersonAlbum`, data);
+	},
+
+	updatePerson(data: UpdatePersonAlbumData): Promise<AxiosResponse> {
+		return axios.patch(`${Constants.getApiUrl()}PersonAlbum`, data);
+	},
+
+	updateProtectionPolicy(data: UpdateProtectionPolicyData): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Album::updateProtectionPolicy`, data);
+	},
+
+	rename(album_id: string, title: string): Promise<AxiosResponse> {
+		return axios.patch(`${Constants.getApiUrl()}Album::rename`, { album_id: album_id, title: title });
+	},
+
+	delete(album_ids: string[]): Promise<AxiosResponse> {
+		return axios.delete(`${Constants.getApiUrl()}Album`, { data: { album_ids: album_ids } });
+	},
+
+	getTargetListAlbums(album_ids: string[] | null): Promise<AxiosResponse<App.Http.Resources.Models.TargetAlbumResource[]>> {
+		return axios.get(`${Constants.getApiUrl()}Album::getTargetListAlbums`, { params: { album_ids: album_ids }, data: {} });
+	},
+
+	move(dest: string | null, album_ids: string[]): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Album::move`, { album_id: dest, album_ids: album_ids });
+	},
+
+	merge(dest: string, album_ids: string[]): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Album::merge`, { album_id: dest, album_ids: album_ids });
+	},
+
+	transfer(album_id: string, user_id: number): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Album::transfer`, { album_id: album_id, user_id: user_id });
+	},
+
+	frame(album_id: string | null): Promise<AxiosResponse<App.Http.Resources.Frame.FrameData>> {
+		return axios.get(`${Constants.getApiUrl()}Frame`, { params: { album_id: album_id }, data: {} });
+	},
+
+	getMapProvider(): Promise<AxiosResponse<App.Http.Resources.GalleryConfigs.MapProviderData>> {
+		return axios.get(`${Constants.getApiUrl()}Map::provider`, { data: {} });
+	},
+
+	getMapData(album_id: string | undefined): Promise<AxiosResponse<App.Http.Resources.Collections.PositionDataResource>> {
+		return axios.get(`${Constants.getApiUrl()}Map`, { params: { album_id: album_id }, data: {} });
+	},
+
+	download(album_ids: string[], variant: App.Enum.DownloadVariantType = "ORIGINAL"): void {
+		location.href = `${Constants.getApiUrl()}Zip?album_ids=${album_ids.join(",")}&variant=${variant}`;
+	},
+
+	getChunkCount(
+		album_ids: string[],
+		variant: App.Enum.DownloadVariantType,
+	): Promise<AxiosResponse<App.Http.Resources.GalleryConfigs.ZipChunkData>> {
+		return axios.get(`${Constants.getApiUrl()}Zip/chunks`, { params: { album_ids: album_ids.join(","), variant }, data: {} });
+	},
+
+	downloadChunk(album_ids: string[], variant: App.Enum.DownloadVariantType, chunk: number): Promise<void> {
+		return axios
+			.get(`${Constants.getApiUrl()}Zip`, { params: { album_ids: album_ids.join(","), variant, chunk }, responseType: "blob" })
+			.then(function (response) {
+				const url = URL.createObjectURL(response.data as Blob);
+				const a = document.createElement("a");
+				const disposition = response.headers["content-disposition"] as string | undefined;
+				let filename = "archive.zip";
+				if (disposition) {
+					const match = disposition.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+					if (match) {
+						filename = decodeURIComponent(match[1].replace(/['"]/g, ""));
+					}
+				}
+				a.href = url;
+				a.download = filename;
+				document.body.appendChild(a);
+				a.click();
+				document.body.removeChild(a);
+				URL.revokeObjectURL(url);
+			});
+	},
+
+	uploadTrack(album_id: string, file: Blob): Promise<AxiosResponse> {
+		const formData = new FormData();
+		formData.append("album_id", album_id);
+		formData.append("file", file);
+
+		const config: AxiosRequestConfig<FormData> = {
+			headers: {
+				"Content-Type": "application/json",
+			},
+			transformRequest: [(data) => data],
+		};
+
+		return axios.post(`${Constants.getApiUrl()}Album::track`, formData, config);
+	},
+
+	deleteTrack(album_id: string): Promise<AxiosResponse> {
+		return axios.delete(`${Constants.getApiUrl()}Album::track`, { params: { album_id: album_id }, data: {} });
+	},
+
+	setPinned(album_id: string, is_pinned: boolean): Promise<AxiosResponse> {
+		return axios.patch(`${Constants.getApiUrl()}Album::setPinned`, { album_id: album_id, is_pinned: is_pinned });
+	},
+
+	watermark(album_id: string): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Album::watermark`, { album_id: album_id });
+	},
+
+	/**
+	 * @param force - Skip the cached entry and refresh it with a new response.
+	 */
+	getAlbumTags(album_id: string, force: boolean = false): Promise<AxiosResponse<{ tags: App.Http.Resources.Tags.TagResource[] }>> {
+		const requester = axios as unknown as AxiosCacheInstance;
+		return requester.get(`${Constants.getApiUrl()}Album::tags`, {
+			params: { album_id: album_id },
+			data: {},
+			id: `album_tags_${album_id}`,
+			cache: force ? { override: true } : undefined,
+		});
+	},
+};
+
+export default AlbumService;

@@ -1,0 +1,225 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+/**
+ * We don't care for unhandled exceptions in tests.
+ * It is the nature of a test to throw an exception.
+ * Without this suppression we had 100+ Linter warning in this file which
+ * don't help anything.
+ *
+ * @noinspection PhpDocMissingThrowsInspection
+ * @noinspection PhpUnhandledExceptionInspection
+ */
+
+namespace Tests\ImageProcessing\Photo;
+
+use App\Jobs\RecomputeAlbumSizeJob;
+use App\Jobs\RecomputeAlbumStatsJob;
+use Illuminate\Support\Facades\Queue;
+use Tests\Constants\TestConstants;
+use Tests\Feature_v2\Base\BaseApiWithDataTest;
+
+class PhotoAddTest extends BaseApiWithDataTest
+{
+	public function testAddPhotoUnauthorizedForbidden(): void
+	{
+		$response = $this->upload(uri: 'Photo', data: []);
+		$this->assertUnprocessable($response);
+
+		$response = $this->upload('Photo', filename: TestConstants::SAMPLE_FILE_NIGHT_IMAGE);
+		$this->assertUnauthorized($response);
+
+		$response = $this->actingAs($this->userNoUpload)->upload('Photo', TestConstants::SAMPLE_FILE_NIGHT_IMAGE);
+		$this->assertForbidden($response);
+	}
+
+	public function testAddPhotoAuthorizedOwner(): void
+	{
+		$this->catchFailureSilence = [];
+		$response = $this->actingAs($this->admin)->upload('Photo', data: []);
+		$this->assertUnprocessable($response);
+
+		$response = $this->actingAs($this->userMayUpload1)->upload('Photo', filename: TestConstants::SAMPLE_FILE_NIGHT_IMAGE, album_id: $this->album3->id);
+		$this->assertForbidden($response);
+
+		$response = $this->actingAs($this->admin)->upload('Photo', filename: TestConstants::SAMPLE_FILE_NIGHT_IMAGE);
+		$this->assertCreated($response);
+		$this->catchFailureSilence = ["App\Exceptions\MediaFileOperationException"];
+
+		// Check album metadata
+		$response = $this->getJsonWithData('Album::head', ['album_id' => 'unsorted']);
+		$this->assertOk($response);
+		$response->assertJson([
+			'config' => [
+				'is_base_album' => false,
+				'is_model_album' => false,
+				'is_password_protected' => false,
+				'is_search_accessible' => false,
+			],
+			'resource' => [
+				'id' => 'unsorted',
+				'title' => 'Unsorted',
+			],
+		]);
+
+		// Check photos
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => 'unsorted']);
+		$this->assertOk($response);
+		$response->assertJson([
+			'photos' => [
+				[
+					'title' => TestConstants::SAMPLE_FILE_NIGHT_IMAGE,
+				],
+			],
+		]);
+		$response = $this->deleteJson('Photo', ['photo_ids' => [$response->json('photos.0.id')], 'from_id' => 'unsorted']);
+		$this->assertNoContent($response);
+
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => 'unsorted']);
+		$this->assertOk($response);
+		$response->assertJsonCount(1, 'photos');
+	}
+
+	public function testDuplicate(): void
+	{
+		$this->catchFailureSilence = [];
+		$response = $this->actingAs($this->admin)->upload('Photo', filename: TestConstants::SAMPLE_FILE_NIGHT_IMAGE);
+		$this->assertCreated($response);
+
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => 'unsorted']);
+		$this->assertOk($response);
+
+		$response = $this->actingAs($this->admin)->upload('Photo', filename: TestConstants::SAMPLE_FILE_NIGHT_IMAGE);
+		$this->assertCreated($response);
+
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => 'unsorted']);
+		$this->assertOk($response);
+		$id1 = $response->json('photos.0.id');
+		$id2 = $response->json('photos.1.id');
+
+		self::assertNotEquals($id1, $id2);
+
+		$response = $this->deleteJson('Photo', ['photo_ids' => [$id1, $id2], 'from_id' => 'unsorted']);
+		$this->assertNoContent($response);
+
+		$this->catchFailureSilence = ["App\Exceptions\MediaFileOperationException"];
+	}
+
+	public function testNotify(): void
+	{
+		$this->catchFailureSilence = [];
+		$response = $this->actingAs($this->admin)->upload('Photo', filename: TestConstants::SAMPLE_FILE_NIGHT_IMAGE, album_id: $this->album3->id);
+		$this->assertCreated($response);
+		$this->catchFailureSilence = ["App\Exceptions\MediaFileOperationException"];
+	}
+
+	public function testAppleLivePhoto1(): void
+	{
+		$this->catchFailureSilence = [];
+		$response = $this->actingAs($this->admin)->upload('Photo', filename: TestConstants::SAMPLE_FILE_TRAIN_IMAGE);
+		$this->assertCreated($response);
+		$response = $this->actingAs($this->admin)->upload('Photo', filename: TestConstants::SAMPLE_FILE_TRAIN_VIDEO);
+		$this->assertCreated($response);
+
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => 'unsorted']);
+		$this->assertOk($response);
+		$photo = $response->json('photos.0');
+
+		self::assertEquals('E905E6C6-C747-4805-942F-9904A0281F02', $photo['live_photo_content_id']);
+
+		self::assertStringEndsWith('.mov', $photo['live_photo_url']);
+		self::assertEquals(pathinfo($photo['live_photo_url'], PATHINFO_DIRNAME), pathinfo($photo['size_variants']['original']['url'], PATHINFO_DIRNAME));
+		self::assertEquals(pathinfo($photo['live_photo_url'], PATHINFO_FILENAME), pathinfo($photo['size_variants']['original']['url'], PATHINFO_FILENAME));
+	}
+
+	public function testAppleLivePhoto2(): void
+	{
+		$this->catchFailureSilence = [];
+		$response = $this->actingAs($this->admin)->upload('Photo', filename: TestConstants::SAMPLE_FILE_TRAIN_VIDEO);
+		$this->assertCreated($response);
+		$response = $this->actingAs($this->admin)->upload('Photo', filename: TestConstants::SAMPLE_FILE_TRAIN_IMAGE);
+		$this->assertCreated($response);
+
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => 'unsorted']);
+		$this->assertOk($response);
+		$photo = $response->json('photos.0');
+
+		self::assertEquals('E905E6C6-C747-4805-942F-9904A0281F02', $photo['live_photo_content_id']);
+
+		self::assertStringEndsWith('.mov', $photo['live_photo_url']);
+		self::assertEquals(pathinfo($photo['live_photo_url'], PATHINFO_DIRNAME), pathinfo($photo['size_variants']['original']['url'], PATHINFO_DIRNAME));
+		self::assertEquals(pathinfo($photo['live_photo_url'], PATHINFO_FILENAME), pathinfo($photo['size_variants']['original']['url'], PATHINFO_FILENAME));
+	}
+
+	public function testGoogleMotionPicture(): void
+	{
+		$this->catchFailureSilence = [];
+		$response = $this->actingAs($this->admin)->upload('Photo', filename: TestConstants::SAMPLE_FILE_GMP_IMAGE);
+		$this->assertCreated($response);
+
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => 'unsorted']);
+		$this->assertOk($response);
+		$id = $response->json('photos.0.id');
+		$response = $this->deleteJson('Photo', ['photo_ids' => [$id], 'from_id' => 'unsorted']);
+		$this->assertNoContent($response);
+	}
+
+	public function testHeicPicture(): void
+	{
+		$this->catchFailureSilence = [];
+		$response = $this->actingAs($this->admin)->upload('Photo', filename: TestConstants::SAMPLE_FILE_HEIC);
+		$this->assertCreated($response);
+
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => 'unsorted']);
+		$this->assertOk($response);
+		$id = $response->json('photos.0.id');
+		$response = $this->deleteJson('Photo', ['photo_ids' => [$id], 'from_id' => 'unsorted']);
+		$this->assertNoContent($response);
+	}
+
+	public function testHeifPicture(): void
+	{
+		$this->catchFailureSilence = [];
+		$response = $this->actingAs($this->admin)->upload('Photo', filename: TestConstants::SAMPLE_FILE_HEIF);
+		$this->assertCreated($response);
+
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => 'unsorted']);
+		$this->assertOk($response);
+		$id = $response->json('photos.0.id');
+		$response = $this->deleteJson('Photo', ['photo_ids' => [$id], 'from_id' => 'unsorted']);
+		$this->assertNoContent($response);
+	}
+
+	public function testPhotoUploadDispatchesJobs(): void
+	{
+		// Fake only the recompute jobs, not the ProcessImageJob
+		// This allows the photo upload to complete while capturing the recompute job dispatches
+		Queue::fake([
+			RecomputeAlbumStatsJob::class,
+			RecomputeAlbumSizeJob::class,
+		]);
+
+		$this->catchFailureSilence = [];
+
+		// Upload a photo to an album
+		$response = $this->actingAs($this->admin)->upload('Photo', filename: TestConstants::SAMPLE_FILE_NIGHT_IMAGE, album_id: $this->album1->id);
+		$this->assertCreated($response);
+
+		// Assert that RecomputeAlbumStatsJob was dispatched for the album
+		Queue::assertPushed(RecomputeAlbumStatsJob::class, function (RecomputeAlbumStatsJob $job) {
+			return $job->album_id === $this->album1->id;
+		});
+
+		// Assert that RecomputeAlbumSizeJob was dispatched for the album
+		Queue::assertPushed(RecomputeAlbumSizeJob::class, function (RecomputeAlbumSizeJob $job) {
+			return $job->album_id === $this->album1->id;
+		});
+
+		$this->catchFailureSilence = ["App\Exceptions\MediaFileOperationException"];
+	}
+}

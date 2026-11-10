@@ -1,0 +1,242 @@
+<template>
+	<UModal v-model:open="isEditOpen" fullscreen :title="modalTitle" :close="{ icon: 'lucide:x' }">
+		<template #body>
+			<div class="w-full max-w-4xl mx-auto">
+				<form v-if="photo" class="w-full flex flex-col md:gap-y-4 md:grid md:grid-cols-[200px_minmax(auto,1fr)] justify-center">
+					<label for="title" class="font-bold self-center">{{ $t("gallery.photo.edit.set_title") }}</label>
+					<UInput id="title" v-model="title" :color="!title ? 'error' : undefined" />
+
+					<label for="description" class="font-bold mt-4 md:mt-0">{{ $t("gallery.photo.edit.set_description") }}</label>
+					<UTextarea id="description" v-model="descriptionForInput" class="w-full h-48" :rows="5" />
+
+					<label for="tags" class="font-bold h-11 mt-4 md:mt-0 self-center">{{ $t("gallery.photo.edit.set_tags") }}</label>
+					<TagsInput id="tags" v-model="tags" :add="true" :placeholder="$t('gallery.photo.edit.no_tags')" />
+					<label for="uploadDate" class="font-bold mt-4 md:mt-0 self-center">{{ $t("gallery.photo.edit.set_created_at") }}</label>
+					<input
+						id="uploadDate"
+						v-model="uploadDateLocal"
+						type="datetime-local"
+						step="1"
+						:class="{
+							'border-0 p-0 w-full border-b hover:border-b-primary-400 focus:border-b-primary-400 bg-transparent': true,
+							'border-b-error': !uploadDate,
+						}"
+					/>
+
+					<label for="takenAtDate" class="font-bold mt-4 md:mt-0 self-center">{{ $t("gallery.photo.edit.set_taken_at") }}</label>
+
+					<div class="flex">
+						<div class="flex items-center pr-2 border-t-0 rounded-t-none">
+							<UTooltip text="Modify taken date">
+								<UCheckbox v-model="is_taken_at_modified" />
+							</UTooltip>
+						</div>
+						<input
+							id="takenAtDate"
+							v-model="takenAtDateLocal"
+							type="datetime-local"
+							step="1"
+							:disabled="!is_taken_at_modified"
+							:class="{
+								'border-0 p-0 w-full border-b hover:border-b-primary-400 focus:border-b-primary-400 bg-transparent': true,
+								'border-dashed': !is_taken_at_modified,
+							}"
+						/>
+						<USelectMenu
+							v-model="takenAtTzOption"
+							:items="timeZoneOptions"
+							label-key="label"
+							:disabled="!is_taken_at_modified"
+							class="border-none"
+						>
+							<template #item-label="{ item }">{{ item.label }}</template>
+						</USelectMenu>
+					</div>
+					<div></div>
+					<div
+						class="mt-0 md:-mt-2 text-sm text-muted"
+						v-html="sprintf($t('gallery.photo.edit.set_taken_at_info'), '<span class=\'text-warning-600\'>*</span>')"
+					></div>
+
+					<template v-if="!is_video">
+						<label for="is360" class="font-bold mt-4 md:mt-0 self-center">{{ $t("gallery.photo.edit.is_360") }}</label>
+						<UCheckbox id="is360" v-model="is_360" class="self-center" />
+					</template>
+
+					<label for="license" class="font-bold mt-4 md:mt-0 self-center">{{ $t("gallery.photo.edit.set_license") }}</label>
+					<USelectMenu id="license" v-model="license" class="w-72" :items="licenseOptions" label-key="label">
+						<template #default="{ modelValue }">{{ selectedLabel(modelValue) }}</template>
+						<template #item-label="{ item }">{{ $t(item.label) }}</template>
+					</USelectMenu>
+					<UButton color="primary" variant="solid" class="w-full col-span-2 justify-center font-bold" @click="save">
+						{{ $t("dialogs.button.save") }}
+					</UButton>
+				</form>
+			</div>
+		</template>
+	</UModal>
+</template>
+<script setup lang="ts">
+import { computed, onMounted, ref, Ref, watch } from "vue";
+import { trans } from "laravel-vue-i18n";
+import { licenseOptions, SelectOption, SelectBuilders, timeZoneOptions } from "@/config/constants";
+import PhotoService from "@/services/photo-service";
+import { useAppToast } from "@/v8/composables/useAppToast";
+import { sprintf } from "@/utils/sprintf";
+import { useRouter } from "vue-router";
+import { usePhotoRoute } from "@/composables/photo/photoRoute";
+import TagsInput from "@/v8/components/forms/basic/TagsInput.vue";
+import TagsService from "@/services/tags-service";
+import AlbumService from "@/services/album-service";
+import { usePhotoStore } from "@/stores/PhotoState";
+import { storeToRefs } from "pinia";
+
+const photoStore = usePhotoStore();
+
+const { photo } = storeToRefs(photoStore);
+
+const toast = useAppToast();
+const router = useRouter();
+const { getParentId } = usePhotoRoute(router);
+const isEditOpen = defineModel("isEditOpen", { default: false }) as Ref<boolean>;
+
+// "Edit Photo: <title>", falling back to the plain title while the photo is still loading.
+const modalTitle = computed(() =>
+	photo.value?.title ? trans("gallery.photo.edit.edit_title_with_name", { title: photo.value.title }) : trans("gallery.photo.edit.edit_title"),
+);
+
+const photo_id = ref<string | undefined>(undefined);
+const title = ref<string | undefined>(undefined);
+const description = ref<string | undefined>(undefined);
+const uploadDate = ref<Date | undefined>(undefined);
+const takenAtDate = ref<Date | undefined>(undefined);
+const tags = ref<string[]>([]);
+const is_taken_at_modified = ref<boolean>(false);
+const is_360 = ref<boolean>(false);
+const is_video = ref<boolean>(false);
+function selectedLabel<T>(option: SelectOption<T> | undefined): string {
+	// A single space (matching USelectMenu's own placeholder fallback) keeps the
+	// trigger's line box at its normal height; an empty string collapses it.
+	return option ? trans(option.label) : " ";
+}
+
+const license = ref<SelectOption<App.Enum.LicenseType> | undefined>(undefined);
+const uploadTz = ref<string | undefined>(undefined);
+const takenAtTz = ref<string | undefined>(undefined);
+
+// UTextarea's v-model requires `string | undefined` (no null).
+const descriptionForInput = computed<string | undefined>({
+	get: () => description.value ?? undefined,
+	set: (v) => {
+		description.value = v;
+	},
+});
+
+const takenAtTzOption = computed<SelectOption<string> | undefined>({
+	get: () => timeZoneOptions.find((o) => o.value === takenAtTz.value),
+	set: (v) => {
+		takenAtTz.value = v?.value;
+	},
+});
+
+// Native <input type="datetime-local"> uses "YYYY-MM-DDTHH:mm:ss" in local time, with no timezone.
+function dateToLocalInputValue(d: Date | undefined): string {
+	if (d === undefined) return "";
+	const pad = (n: number) => n.toString().padStart(2, "0");
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+const uploadDateLocal = computed<string>({
+	get: () => dateToLocalInputValue(uploadDate.value),
+	set: (v) => {
+		uploadDate.value = v ? new Date(v) : undefined;
+	},
+});
+
+const takenAtDateLocal = computed<string>({
+	get: () => dateToLocalInputValue(takenAtDate.value),
+	set: (v) => {
+		takenAtDate.value = v ? new Date(v) : undefined;
+	},
+});
+
+function load(photoToEdit: App.Http.Resources.Models.PhotoResource) {
+	photo_id.value = photoToEdit.id;
+	title.value = photoToEdit.title;
+	description.value = photoToEdit.description;
+	tags.value = photoToEdit.tags.map((t) => t.name);
+
+	const dataDate = (photoToEdit.created_at ?? "").slice(0, 19);
+	uploadTz.value = (photoToEdit.created_at ?? "").slice(19);
+	uploadDate.value = new Date(dataDate);
+	is_taken_at_modified.value = photoToEdit.precomputed.is_taken_at_modified;
+
+	if (photoToEdit.taken_at === null) {
+		takenAtDate.value = undefined;
+		takenAtTz.value = undefined;
+	} else {
+		const takenDate = (photoToEdit.taken_at ?? "").slice(0, 19);
+		takenAtTz.value = (photoToEdit.taken_at ?? "").slice(19);
+		takenAtDate.value = new Date(takenDate);
+	}
+
+	license.value = SelectBuilders.buildLicense(photoToEdit.license);
+	is_360.value = photoToEdit.precomputed.is_360;
+	is_video.value = photoToEdit.precomputed.is_video;
+}
+
+function save() {
+	if (!photo_id.value || !title.value || !uploadDate.value) {
+		return;
+	}
+
+	let takenDate = null;
+	if (takenAtDate.value !== undefined) {
+		takenDate = dateToLocalInputValue(takenAtDate.value) + (takenAtTz.value ?? "");
+	}
+
+	PhotoService.update(photo_id.value, getParentId() ?? null, {
+		title: title.value,
+		description: description.value ?? "",
+		tags: tags.value ?? [],
+		license: license.value?.value ?? "none",
+		upload_date: dateToLocalInputValue(uploadDate.value) + uploadTz.value,
+		taken_at: is_taken_at_modified.value ? takenDate : null,
+		is_360: is_video.value ? undefined : is_360.value,
+	}).then((response) => {
+		toast.add({ severity: "success", summary: "Success", life: 3000 });
+		// Clear cache of tags just in case we added any.
+		TagsService.clearCache();
+		// Update the parent album cache.
+		// This is needed to ensure that the album view is updated with the new photo data
+		// and that the tags input is updated with the new tags.
+		AlbumService.clearCache(getParentId());
+		// A save that resolves after another photo was opened must not touch that photo or its form
+		// (the editor stays mounted while closed, so the form would otherwise keep the old photo's id).
+		if (photo.value?.id !== response.data.id) {
+			return;
+		}
+		// Feature 082: switch the open photo (and its thumb) to or from the sphere view right away.
+		photo.value.precomputed.is_360 = response.data.precomputed.is_360;
+		photo.value.panorama = response.data.panorama;
+		load(response.data);
+	});
+}
+
+onMounted(() => {
+	if (photoStore.photo) {
+		load(photoStore.photo);
+	}
+});
+
+watch(
+	() => photo.value,
+	(newPhoto: App.Http.Resources.Models.PhotoResource | undefined, _oldPhoto) => {
+		if (newPhoto) {
+			load(newPhoto);
+		} else {
+			photo_id.value = undefined;
+		}
+	},
+);
+</script>

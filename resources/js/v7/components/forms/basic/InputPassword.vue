@@ -1,0 +1,36 @@
+<template>
+	<InputText
+		v-model="modelValue"
+		:class="classValue"
+		:invalid="props.invalid"
+		:variant="props.variant"
+		:fluid="props.fluid"
+		:dt="props.dt"
+		:pt="props.pt"
+		:pt-options="props.ptOptions"
+		:unstyled="props.unstyled"
+		type="password"
+	/>
+</template>
+<script setup lang="ts">
+import { ref } from "vue";
+import InputText, { InputTextPassThroughOptions } from "primevue/inputtext";
+import type { PassThroughOptions } from "primevue/passthrough";
+import type { DesignToken, Nullable, PassThrough } from "@primevue/core";
+import { InputTextDesignTokens } from "@primeuix/themes/types/inputtext";
+
+const props = defineProps<{
+	size?: "small" | "large" | undefined;
+	invalid?: boolean | undefined;
+	variant?: "outlined" | "filled" | undefined;
+	fluid?: boolean;
+	dt?: DesignToken<InputTextDesignTokens>;
+	pt?: PassThrough<InputTextPassThroughOptions>;
+	ptOptions?: PassThroughOptions;
+	unstyled?: boolean;
+	class?: string;
+}>();
+
+const modelValue = defineModel<Nullable<string>>();
+const classValue = ref((props.class ?? "") + " border-0 w-full border-b hover:border-b-danger-600 focus:border-b-danger-600");
+</script>

@@ -1,0 +1,69 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Actions\Photo\Pipes\Shared;
+
+use App\Constants\PhotoAlbum as PA;
+use App\Contracts\PhotoCreate\SharedPipe;
+use App\DTO\PhotoCreate\DuplicateDTO;
+use App\DTO\PhotoCreate\StandaloneDTO;
+use App\Events\PhotoAdded;
+use App\Events\PhotoSaved;
+use App\Exceptions\Internal\LycheeLogicException;
+use App\Models\Album;
+use App\Services\PhotoBucketComputer;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * This MUST be called after a first save() otherwise we do not have a photo id.
+ */
+class SetParent implements SharedPipe
+{
+	public function handle(DuplicateDTO|StandaloneDTO $state, \Closure $next): DuplicateDTO|StandaloneDTO
+	{
+		if ($state->album instanceof Album) {
+			if ($state->photo->id === null) {
+				throw new LycheeLogicException('Photo Id is null, cannot set a parent album.');
+			}
+
+			// Avoid duplicates key constraint
+			DB::table(PA::PHOTO_ALBUM)
+				->where(PA::PHOTO_ID, '=', $state->photo->id)
+				->where(PA::ALBUM_ID, '=', $state->album->id)
+				->delete();
+
+			// The new pivot row's key, for $state->album's effective photo
+			// sort column (FR-092-03).
+			$bucket_key = resolve(PhotoBucketComputer::class)->keyForPhoto($state->album->getEffectivePhotoSorting()->column, $state->photo);
+
+			// Insert the new link
+			DB::table(PA::PHOTO_ALBUM)
+				->insert([
+					'photo_id' => $state->photo->id,
+					'album_id' => $state->album->id,
+					'bucket_key' => $bucket_key,
+				]);
+
+			// Avoid unnecessary DB request, when we access the album of a
+			// photo later (e.g. when a notification is sent).
+			$state->photo->load('albums');
+
+			// Dispatch event for album stats recomputation
+			// This must be done after SetParent so the photo_album relationship exists
+			PhotoSaved::dispatch([$state->photo->id]);
+
+			// Dispatch PhotoAdded for new photo records only (upload, import, duplication).
+			// Existing records that were re-saved into a different album are handled by PhotoMoved.
+			if ($state->photo->wasRecentlyCreated) {
+				PhotoAdded::dispatch($state->photo->id);
+			}
+		}
+
+		return $next($state);
+	}
+}

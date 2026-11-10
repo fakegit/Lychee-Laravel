@@ -1,0 +1,90 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+return [
+    'title' => 'Panel de administración',
+    'overview' => 'Resumen',
+    'tools' => 'Herramientas',
+    'tool_groups' => [
+        'core' => 'Admin',
+        'monitoring' => 'Supervisión',
+        'extensions' => 'Extensiones',
+    ],
+    'refresh' => 'Actualizar',
+    'metrics' => [
+        'photos_count' => 'Fotos',
+        'albums_count' => 'Álbumes',
+        'users_count' => 'Usuarios',
+        'storage_bytes' => 'Almacenamiento usado',
+        'queued_jobs' => 'Trabajos en cola',
+        'failed_jobs_24h' => 'Trabajos fallidos (24 h)',
+        'last_successful_job_at' => 'Último trabajo correcto',
+    ],
+    'errors' => [
+        'partial' => 'No se pudieron cargar algunas métricas.',
+    ],
+    'security' => [
+        'title' => 'Avisos de seguridad',
+        'description' => 'Las siguientes vulnerabilidades afectan a tu versión actual de Lychee. Actualiza lo antes posible.',
+        'no_cvss' => '(sin puntuación CVSS)',
+    ],
+    'update' => [
+        'title' => 'Estado de actualización',
+        'update_available' => 'Hay una versión más reciente disponible (actual: :current, última: :latest).',
+        'git_update_available' => 'Tu instalación está :count commits por detrás de master.',
+    ],
+    'nsfw_config' => [
+        'title' => 'Detección y moderación NSFW',
+        'tab_settings' => 'Ajustes',
+        'tab_presets' => 'Preajustes',
+        'description' => 'Configura la detección automática de contenido NSFW en las fotos subidas. Las fotos se analizan de forma asíncrona mediante el servicio de clasificación externo.',
+        'enable' => 'Activar la clasificación NSFW',
+        'preset' => 'Preajuste de detección',
+        'scan_trusted' => 'Analizar usuarios de confianza',
+        'section_general' => 'General',
+        'section_actions' => 'Acciones',
+        'actions_explanation' => 'Configura qué ocurre cuando se detecta un resultado de tipo <b>Bloquear</b>, según el nivel de confianza. Los resultados de tipo <b>Revisar</b> siempre envían a moderación a los usuarios de Verificación y Monitoreo, y se aprueban automáticamente para los usuarios de Confiar pero verificar y De confianza.',
+        'sensitive_explanation' => 'Los resultados de tipo <b>Sensible</b> de los usuarios de Verificación siempre se envían a moderación. Para los demás niveles de confianza, los siguientes ajustes determinan si el álbum de la foto se marca como sensible y qué ocurre cuando la foto no tiene álbum.',
+        'sensitive_album' => 'Sensible: acción sobre el álbum',
+        'sensitive_no_album' => 'Sensible: alternativa sin álbum',
+        'section_hide_on_scan' => 'Ocultar durante el análisis',
+        'hide_on_scan_explanation' => 'Elige para cada nivel de confianza si las fotos deben ocultarse temporalmente mientras se realiza el análisis NSFW. Esto evita que contenido potencialmente problemático sea visible antes de que finalice el análisis.',
+        'hide_on_scan_warning' => 'Si está activado, las fotos se ocultan (se colocan en la cola de moderación) mientras se realiza el análisis NSFW.<br> Si el clasificador NSFW falla o no está disponible, la foto permanecerá oculta hasta que un administrador la apruebe manualmente.',
+        'hide_monitor' => 'Ocultar fotos de Monitoreo durante el análisis',
+        'hide_tbv' => 'Ocultar fotos de Confiar pero verificar durante el análisis',
+        'hide_trusted' => 'Ocultar fotos De confianza durante el análisis',
+        'section_matrix' => 'Matriz de nivel de confianza × resultado',
+        'matrix_explanation' => 'Cada foto subida se analiza con el clasificador NSFW, que devuelve resultados en tres niveles de gravedad: <b>Bloquear</b> (contenido explícito), <b>Revisar</b> (contenido cuestionable) y <b>Sensible</b> (contenido leve). La acción aplicada a cada resultado depende del nivel de confianza de quien sube la foto. Esta tabla resume la configuración actual.',
+        'matrix_trust_level' => 'Nivel de confianza',
+        'matrix_check' => 'Verificación',
+        'matrix_monitor' => 'Monitoreo',
+        'matrix_tbv' => 'Confiar pero verificar',
+        'matrix_trusted' => 'De confianza',
+        'runtime_config' => 'Configuración de ejecución del servicio',
+        'presets' => 'Preajustes disponibles',
+        'key' => 'Clave',
+        'value' => 'Valor',
+        'active' => 'Activo',
+        'block' => 'Bloquear',
+        'review' => 'Revisar',
+        'sensitive' => 'Sensible',
+        'none' => 'Ninguno',
+        'matrix_moderate' => 'Moderar',
+        'matrix_approve' => 'Aprobar',
+        'matrix_mark_album' => 'Marcar álbum',
+        'matrix_nothing' => 'Nada',
+        'legend_block' => 'La foto se elimina permanentemente.',
+        'legend_moderate' => 'La foto queda retenida para revisión del administrador.',
+        'legend_approve' => 'La foto se acepta y el resultado se registra.',
+        'legend_mark_album' => 'El álbum de la foto se marca como sensible.',
+        'legend_nothing' => 'No se realiza ninguna acción.',
+    ],
+    'nsfw_findings' => [
+        'title' => 'Resultados NSFW',
+    ],
+];

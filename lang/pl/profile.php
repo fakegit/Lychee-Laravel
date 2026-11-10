@@ -1,0 +1,91 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Profile page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Profil',
+    'login' => [
+        'header' => 'Profil',
+        'enter_current_password' => 'Wprowadź swoje aktualne hasło',
+        'current_password' => 'Aktualne hasło',
+        'credentials_update' => 'Twoje poświadczenia zostaną zmienione na następujące:',
+        'username' => 'Nazwa użytkownika',
+        'change_password' => 'Zmień hasło',
+        'cancel_password_change' => 'Anuluj zmianę hasła',
+        'new_password' => 'Nowe hasło',
+        'confirm_new_password' => 'Potwierdź nowe hasło',
+        'password_strength_info' => 'Siła hasła jest szacowana za pomocą <a href="https://github.com/dropbox/zxcvbn" class="inline-block border-b border-info border-dashed" target="_blank" rel="noreferrer">algorytmu zxcvbn</a>.',
+        'email_instruction' => 'Dodaj swój adres e-mail poniżej, aby włączyć otrzymywanie powiadomień e-mail. Aby przestać otrzymywać wiadomości e-mail, po prostu usuń swój adres e-mail poniżej.',
+        'email' => 'E-mail',
+        'change' => 'Zmień login',
+        'api_token' => 'Token API ...',
+        'missing_fields' => 'Brakujące pola',
+        'ldap_managed' => 'Informacje logowania użytkownika są zarządzane przez LDAP.',
+    ],
+    'register' => [
+        'username_exists' => 'Nazwa użytkownika już istnieje.',
+        'password_mismatch' => 'Hasła nie pasują do siebie.',
+        'signup' => 'Zarejestruj się',
+        'error' => 'Wystąpił błąd podczas rejestrowania konta.',
+        'success' => 'Twoje konto zostało pomyślnie utworzone.',
+    ],
+    'admin_setup' => [
+        'header' => 'Skonfiguruj swoje konto administratora',
+        'welcome' => 'Witamy w Lychee,<br>zacznijmy od utworzenia konta administratora.',
+        'submit' => 'Utwórz konto administratora',
+        'success' => 'Konto administratora zostało pomyślnie utworzone.',
+        'error' => 'Wystąpił błąd podczas tworzenia konta administratora.',
+        'already_exists' => 'Konto administratora zostało już skonfigurowane.',
+    ],
+    'token' => [
+        'unavailable' => 'Ten token został już wyświetlony.',
+        'no_data' => 'Nie wygenerowano tokenu API.',
+        'disable' => 'Wyłącz',
+        'disabled' => 'Token wyłączony',
+        'warning' => 'Ten token nie będzie wyświetlany ponownie. Należy go skopiować i przechowywać w bezpiecznym miejscu.',
+        'reset' => 'Zresetuj token',
+        'create' => 'Utwórz nowy token',
+    ],
+    'oauth' => [
+        'header' => 'OAuth',
+        'header_not_available' => 'OAuth nie jest dostępny',
+        'setup_env' => 'Skonfiguruj poświadczenia w pliku .env',
+        'token_registered' => 'Zarejestrowano token %s.',
+        'setup' => 'Konfiguracja %s',
+        'reset' => 'resetuj',
+        'credential_deleted' => 'Poświadczenie usunięte!',
+    ],
+    'u2f' => [
+        'header' => 'Passkey/MFA/2FA',
+        'info' => 'Zapewnia to jedynie możliwość używania WebAuthn do uwierzytelniania zamiast nazwy użytkownika i hasła.',
+        'empty' => 'Lista poświadczeń jest pusta!',
+        'not_secure' => 'Środowisko nie jest zabezpieczone. U2F nie jest dostępne.',
+        'new' => 'Zarejestruj nowe urządzenie.',
+        'credential_deleted' => 'Poświadczenie usunięte!',
+        'credential_updated' => 'Poświadczenie zaktualizowane!',
+        'credential_registred' => 'Rejestracja zakończona sukcesem!',
+        '5_chars' => 'Co najmniej 5 znaków.',
+    ],
+    'preferences' => [
+        'header' => 'Preferencje',
+        'save' => 'Zapisz preferencje',
+        'reset' => 'Resetuj',
+        'change_saved' => 'Preferencje zapisane!',
+    ],
+    'shared_albums' => [
+        'instruction' => 'Wybierz, jak udostępnione albumy (albumy innych użytkowników) mają być wyświetlane w twojej galerii:',
+        'mode_default' => 'Użyj ustawienia serwera',
+        'mode_default_desc' => 'Dziedzicz domyślny tryb widoczności serwera.',
+        'mode_show' => 'Pokaż razem',
+        'mode_show_desc' => 'Udostępnione albumy są wyświetlane pod twoimi albumami.',
+        'mode_separate' => 'Osobne karty',
+        'mode_separate_desc' => 'Wyświetlaj albumy w osobnych kartach "Moje albumy" i "Udostępnione mi".',
+        'mode_separate_shared_only' => 'Tylko udostępnione',
+        'mode_separate_shared_only_desc' => 'Osobne karty pokazujące tylko bezpośrednio udostępnione albumy (bez albumów publicznych).',
+        'mode_hide' => 'Ukryj',
+        'mode_hide_desc' => 'Nie pokazuj żadnych udostępnionych albumów.',
+    ],
+];

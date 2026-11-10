@@ -1,0 +1,402 @@
+import InitService from "@/services/init-service";
+import { defineStore } from "pinia";
+import { useTogglablesStateStore } from "./ModalsState";
+
+export type LycheeStateStore = ReturnType<typeof useLycheeStateStore>;
+
+export const useLycheeStateStore = defineStore("lychee-store", {
+	state: () => ({
+		// flag to fetch data
+		is_init: false,
+		is_loading: false,
+
+		// Debug mode (is default to true to see the first crash)
+		is_debug_enabled: true,
+
+		// Photo config
+		slideshow_timeout: 5,
+		is_slideshow_enabled: true,
+
+		// Flow settings (Feature 068)
+		is_flow_opt_in_strategy: false,
+
+		// configs for nsfw
+		are_nsfw_visible: false,
+		is_nsfw_background_blurred: false,
+		is_nsfw_banner_backdrop_blurred: false,
+		nsfw_banner_override: "",
+
+		// Image overlay settings
+		image_overlay_type: "exif" as App.Enum.ImageOverlayType,
+		can_rotate: false,
+		can_autoplay: false,
+		is_video_loop_enabled: false,
+		is_photo_viewer_highest_quality_enabled: false,
+		is_exif_disabled: false,
+		is_favourite_enabled: false,
+		photo_previous_next_size: "small" as App.Enum.SmallLargeType,
+		is_details_links_enabled: false,
+		is_desktop_dock_full_transparency_enabled: false,
+		is_mobile_dock_full_transparency_enabled: false,
+		is_photo_details_always_open: false,
+		is_face_overlay_visible: true,
+		is_face_recognition_enabled: false,
+		is_nsfw_classifier_enabled: false,
+		is_person_album_enabled: false,
+		nsfw_overlay_mode: "hidden" as "hidden" | "all" | "block" | "review" | "sensitive",
+
+		// keybinding help
+		show_keybinding_help_popup: false,
+
+		// album stuff
+		expert_album_settings: false,
+		default_album_protection: "private" as App.Enum.DefaultAlbumProtectionType,
+		display_thumb_album_overlay: "always" as App.Enum.VisibilityType,
+		display_thumb_photo_overlay: "always" as App.Enum.VisibilityType,
+		album_subtitle_type: "OLDSTYLE" as App.Enum.ThumbAlbumSubtitleType,
+		album_decoration: "LAYERS" as App.Enum.AlbumDecorationType,
+		album_decoration_orientation: "ROW" as App.Enum.AlbumDecorationOrientation,
+		album_view_mode: "grid" as App.Enum.AlbumLayoutType,
+		number_albums_per_row_mobile: 3 as 1 | 2 | 3,
+		// Feature 110 (FR-110-02): v8 album tile minimum width in CSS px.
+		album_thumb_min_width: 175,
+		// Feature 110 (FR-110-16): gap between v8 album tiles in CSS px from 768 px wide.
+		album_thumb_gap: 16,
+		photo_thumb_info: "title" as App.Enum.PhotoThumbInfoType,
+		is_photo_thumb_tags_enabled: false,
+		is_rounded_corners_enabled: true,
+		is_album_border_enabled: false,
+		is_selection_border_enabled: false,
+		is_selection_overlay_enabled: true,
+		is_photo_ken_burns_on_hover: true,
+		photo_ken_burns_on_hover_scale: 50,
+		photo_ken_burns_on_hover_duration: 15,
+		date_format_album_thumb: "M Y",
+		thumb_min_max_order: "younger_older" as App.Enum.DateOrderingType,
+		date_format_photo_overlay: "M j, Y, g:i:s A e",
+		date_format_sidebar_uploaded: "M j, Y, g:i:s A e",
+		date_format_sidebar_taken_at: "M j, Y, g:i:s A e",
+		date_scrubber_label_format: "j M Y",
+		date_scrubber_album_label_format: "j M Y",
+		date_scrubber_format_year: "Y",
+		date_scrubber_format_month: "M",
+		date_scrubber_format_day: "d/m",
+		date_scrubber_format_hour: "H:00",
+
+		// Enhanced Album Display
+		is_album_enhanced_display_enabled: false,
+		album_header_size: "half_screen" as App.Enum.AlbumHeaderSize,
+		is_album_header_landing_title_enabled: false,
+
+		use_admin_dashboard: true,
+		// v3 struct-of-arrays listing path of the shared stores: set to true by
+		// `app-v8.ts` at boot, never by v7, which stays on v2 (Feature 109, FR-109-05).
+		is_struct_of_array_enabled: false,
+
+		// Download settings
+		is_raw_download_enabled: false,
+		is_thumb_download_enabled: false,
+		is_thum2x_download_enabled: false,
+		is_small_download_enabled: false,
+		is_small2x_download_enabled: false,
+		is_medium_download_enabled: false,
+		is_medium2x_download_enabled: false,
+		is_download_archive_chunked: false,
+
+		// menu stuff
+		clockwork_url: "" as null | string,
+
+		// Timeline settings
+		is_timeline_left_border_visible: true,
+		timeline_lens_height: 230,
+		timeline_lens_falloff: 17,
+		timeline_lens_magnification: 55,
+
+		// Site title & Dropbox API key
+		title: "gallery.title",
+		site_logo: "",
+		dropbox_api_key: "disabled",
+		default_homepage: "gallery",
+		is_timeline_page_enabled: false,
+		is_contact_form_enabled: false,
+		is_contact_form_enabled_on_gallery: false,
+		is_contact_form_enabled_on_album: false,
+		is_embed_enabled: true,
+		is_gallery_locked: false,
+		is_photo_share_card_enabled: true,
+		site_owner: "",
+
+		// Login options
+		is_basic_auth_enabled: true,
+		is_webauthn_enabled: true,
+
+		// Lychee Supporter Edition
+		is_se_enabled: false,
+		is_pro_enabled: false,
+		is_se_preview_enabled: false,
+		is_se_info_hidden: false,
+		is_se_expired: false,
+		is_live_metrics_enabled: false,
+		is_white_label_enabled: false,
+
+		// Settings toggles
+		is_old_style: false,
+		is_expert_mode: false,
+		are_all_settings_enabled: false,
+
+		// Registration settings
+		is_registration_enabled: false,
+		is_email_login_enabled: false,
+
+		// Gesture settings
+		is_scroll_to_navigate_photos_enabled: true,
+		is_swipe_vertically_to_go_back_enabled: true,
+		disable_swipe_effect: false,
+		photo_click_action: "overlay" as App.Enum.PhotoClickAction,
+		is_photo_minimap_enabled: true,
+		is_photo_minimap_enabled_mobile: true,
+		photo_minimap_idle_opacity: 25,
+		photo_minimap_idle_opacity_mobile: 25,
+		photo_minimap_fade_delay: 2,
+
+		// Rating settings
+		is_rating_show_avg_in_details_enabled: false,
+		is_rating_show_avg_in_photo_view_enabled: false,
+		rating_photo_view_mode: "never" as App.Enum.VisibilityType,
+		is_rating_show_avg_in_album_view_enabled: false,
+		rating_album_view_mode: "never" as App.Enum.VisibilityType,
+
+		// Pagination settings
+		photos_pagination_mode: "infinite_scroll" as App.Enum.PaginationMode,
+		albums_pagination_mode: "infinite_scroll" as App.Enum.PaginationMode,
+		photos_per_page: 100,
+		albums_per_page: 30,
+		photos_infinite_scroll_threshold: 10,
+		albums_infinite_scroll_threshold: 10,
+
+		// Flags visibility settings
+		is_cover_id_flag_enabled: true,
+		is_header_id_flag_enabled: true,
+		is_highlighted_flag_enabled: true,
+		is_validated_flag_enabled: true,
+		is_smart_album_flags_enabled: true,
+		is_album_flags_enabled: true,
+		is_public_hidden_flag_enabled: true,
+		is_public_visible_flag_enabled: true,
+		is_password_flag_enabled: true,
+		is_sensitive_flag_enabled: true,
+	}),
+	actions: {
+		/**
+		 * Drop the cached init data and fetch it again.
+		 * Needed after login: part of the init data (e.g. `is_face_recognition_enabled`) depends on the user.
+		 */
+		async refresh(): Promise<void> {
+			// An anonymous load may still be in flight: let it settle, otherwise load() would just
+			// wait for it and return, leaving us with the guest data.
+			while (this.is_loading) {
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
+
+			this.is_init = false;
+			return this.load();
+		},
+		async load(): Promise<void> {
+			// Check if already initialized
+			if (this.is_init) {
+				return Promise.resolve();
+			}
+
+			// semaphore to avoid multiple calls
+			if (this.is_loading) {
+				while (this.is_loading) {
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				}
+
+				return Promise.resolve();
+			}
+
+			this.is_loading = true;
+
+			return InitService.fetchInitData()
+				.then((response) => {
+					this.is_init = true;
+					this.is_loading = false;
+
+					const data = response.data;
+
+					this.is_debug_enabled = data.is_debug_enabled;
+
+					this.are_nsfw_visible = data.are_nsfw_visible;
+					this.is_nsfw_background_blurred = data.is_nsfw_background_blurred;
+					this.nsfw_banner_override = data.nsfw_banner_override;
+					this.is_nsfw_banner_backdrop_blurred = data.is_nsfw_banner_backdrop_blurred;
+
+					this.show_keybinding_help_popup = data.show_keybinding_help_popup;
+
+					this.image_overlay_type = data.image_overlay_type;
+					this.can_rotate = data.can_rotate;
+					this.can_autoplay = data.can_autoplay;
+					this.is_video_loop_enabled = data.is_video_loop_enabled;
+					this.is_photo_viewer_highest_quality_enabled = data.is_photo_viewer_highest_quality_enabled;
+					this.is_exif_disabled = data.is_exif_disabled;
+					this.is_favourite_enabled = data.is_favourite_enabled;
+
+					this.display_thumb_album_overlay = data.display_thumb_album_overlay;
+					this.display_thumb_photo_overlay = data.display_thumb_photo_overlay;
+					this.album_subtitle_type = data.album_subtitle_type;
+					this.album_decoration = data.album_decoration;
+					this.album_decoration_orientation = data.album_decoration_orientation;
+
+					this.is_album_enhanced_display_enabled = data.is_album_enhanced_display_enabled;
+					this.album_header_size = data.album_header_size;
+					this.is_album_header_landing_title_enabled = data.is_album_header_landing_title_enabled;
+
+					this.clockwork_url = data.clockwork_url;
+
+					this.slideshow_timeout = data.slideshow_timeout;
+					this.is_slideshow_enabled = data.is_slideshow_enabled;
+
+					this.is_timeline_left_border_visible = data.is_timeline_left_border_visible;
+					this.timeline_lens_height = data.timeline_lens_height;
+					this.timeline_lens_falloff = data.timeline_lens_falloff;
+					this.timeline_lens_magnification = data.timeline_lens_magnification;
+
+					this.is_flow_opt_in_strategy = data.is_flow_opt_in_strategy;
+
+					this.title = data.title;
+					this.site_logo = data.site_logo;
+					this.dropbox_api_key = data.dropbox_api_key;
+
+					this.is_basic_auth_enabled = data.is_basic_auth_enabled;
+					this.is_webauthn_enabled = data.is_webauthn_enabled;
+
+					this.is_se_enabled = data.is_se_enabled;
+					this.is_pro_enabled = data.is_pro_enabled;
+					this.is_se_preview_enabled = data.is_se_preview_enabled;
+					this.is_se_info_hidden = data.is_se_info_hidden;
+					this.is_se_expired = data.is_se_expired;
+					this.is_live_metrics_enabled = data.is_live_metrics_enabled;
+					this.is_white_label_enabled = data.is_white_label_enabled;
+					this.number_albums_per_row_mobile = data.number_albums_per_row_mobile;
+					this.album_thumb_min_width = data.album_thumb_min_width;
+					this.album_thumb_gap = data.album_thumb_gap;
+					this.photo_thumb_info = data.photo_thumb_info;
+					this.is_photo_thumb_tags_enabled = data.is_photo_thumb_tags_enabled;
+					this.is_rounded_corners_enabled = data.is_rounded_corners_enabled;
+					this.is_album_border_enabled = data.is_album_border_enabled;
+					this.is_selection_border_enabled = data.is_selection_border_enabled;
+					this.is_selection_overlay_enabled = data.is_selection_overlay_enabled;
+					this.is_photo_ken_burns_on_hover = data.is_photo_ken_burns_on_hover;
+					this.photo_ken_burns_on_hover_scale = data.photo_ken_burns_on_hover_scale;
+					this.photo_ken_burns_on_hover_duration = data.photo_ken_burns_on_hover_duration;
+					this.date_format_album_thumb = data.date_format_album_thumb;
+					this.thumb_min_max_order = data.thumb_min_max_order;
+					this.date_format_photo_overlay = data.date_format_photo_overlay;
+					this.date_format_sidebar_uploaded = data.date_format_sidebar_uploaded;
+					this.date_format_sidebar_taken_at = data.date_format_sidebar_taken_at;
+					this.date_scrubber_label_format = data.date_scrubber_label_format;
+					this.date_scrubber_album_label_format = data.date_scrubber_album_label_format;
+					this.date_scrubber_format_year = data.date_scrubber_format_year;
+					this.date_scrubber_format_month = data.date_scrubber_format_month;
+					this.date_scrubber_format_day = data.date_scrubber_format_day;
+					this.date_scrubber_format_hour = data.date_scrubber_format_hour;
+					this.album_view_mode = data.album_layout;
+
+					this.is_raw_download_enabled = data.is_raw_download_enabled;
+					this.is_thumb_download_enabled = data.is_thumb_download_enabled;
+					this.is_thum2x_download_enabled = data.is_thum2x_download_enabled;
+					this.is_small_download_enabled = data.is_small_download_enabled;
+					this.is_small2x_download_enabled = data.is_small2x_download_enabled;
+					this.is_medium_download_enabled = data.is_medium_download_enabled;
+					this.is_medium2x_download_enabled = data.is_medium2x_download_enabled;
+					this.is_download_archive_chunked = data.is_download_archive_chunked;
+					this.photo_previous_next_size = data.photo_previous_next_size;
+					this.is_details_links_enabled = data.is_details_links_enabled;
+					this.is_desktop_dock_full_transparency_enabled = data.is_desktop_dock_full_transparency_enabled;
+					this.is_mobile_dock_full_transparency_enabled = data.is_mobile_dock_full_transparency_enabled;
+					this.is_photo_details_always_open = data.is_photo_details_always_open;
+					this.is_face_overlay_visible = data.is_face_overlay_visible;
+					this.is_face_recognition_enabled = data.is_face_recognition_enabled;
+					this.is_nsfw_classifier_enabled = data.is_nsfw_classifier_enabled;
+					this.is_person_album_enabled = data.is_person_album_enabled;
+					const togglableStore = useTogglablesStateStore();
+					// Initialize the details togglable according to the always open config
+					togglableStore.are_details_open = data.is_photo_details_always_open;
+
+					this.is_registration_enabled = data.is_registration_enabled;
+					this.is_email_login_enabled = data.is_email_login_enabled;
+
+					this.is_scroll_to_navigate_photos_enabled = data.is_scroll_to_navigate_photos_enabled;
+					this.is_swipe_vertically_to_go_back_enabled = data.is_swipe_vertically_to_go_back_enabled;
+					this.disable_swipe_effect = data.disable_swipe_effect;
+					this.photo_click_action = data.photo_click_action;
+					this.is_photo_minimap_enabled = data.is_photo_minimap_enabled;
+					this.is_photo_minimap_enabled_mobile = data.is_photo_minimap_enabled_mobile;
+					this.photo_minimap_idle_opacity = data.photo_minimap_idle_opacity;
+					this.photo_minimap_idle_opacity_mobile = data.photo_minimap_idle_opacity_mobile;
+					this.photo_minimap_fade_delay = data.photo_minimap_fade_delay;
+
+					this.is_rating_show_avg_in_details_enabled = data.is_rating_show_avg_in_details_enabled;
+					this.is_rating_show_avg_in_photo_view_enabled = data.is_rating_show_avg_in_photo_view_enabled;
+					this.rating_photo_view_mode = data.rating_photo_view_mode;
+					this.is_rating_show_avg_in_album_view_enabled = data.is_rating_show_avg_in_album_view_enabled;
+					this.rating_album_view_mode = data.rating_album_view_mode;
+
+					this.default_homepage = data.default_homepage;
+					this.is_timeline_page_enabled = data.is_timeline_page_enabled;
+					this.is_contact_form_enabled = data.is_contact_form_enabled;
+					this.is_contact_form_enabled_on_gallery = data.is_contact_form_enabled_on_gallery;
+					this.is_contact_form_enabled_on_album = data.is_contact_form_enabled_on_album;
+					this.is_embed_enabled = data.is_embed_enabled;
+					this.is_gallery_locked = data.is_gallery_locked;
+					this.is_photo_share_card_enabled = data.is_photo_share_card_enabled;
+					this.site_owner = data.site_owner;
+
+					this.photos_pagination_mode = data.photos_pagination_mode;
+					this.albums_pagination_mode = data.albums_pagination_mode;
+					this.photos_per_page = data.photos_per_page;
+					this.albums_per_page = data.albums_per_page;
+					this.photos_infinite_scroll_threshold = data.photos_infinite_scroll_threshold;
+					this.albums_infinite_scroll_threshold = data.albums_infinite_scroll_threshold;
+
+					this.default_album_protection = data.default_album_protection;
+					this.expert_album_settings = data.expert_album_settings;
+					this.use_admin_dashboard = data.use_admin_dashboard;
+
+					this.is_cover_id_flag_enabled = data.is_cover_id_flag_enabled;
+					this.is_header_id_flag_enabled = data.is_header_id_flag_enabled;
+					this.is_highlighted_flag_enabled = data.is_highlighted_flag_enabled;
+					this.is_validated_flag_enabled = data.is_validated_flag_enabled;
+					this.is_smart_album_flags_enabled = data.is_smart_album_flags_enabled;
+					this.is_album_flags_enabled = data.is_album_flags_enabled;
+					this.is_public_hidden_flag_enabled = data.is_public_hidden_flag_enabled;
+					this.is_public_visible_flag_enabled = data.is_public_visible_flag_enabled;
+					this.is_password_flag_enabled = data.is_password_flag_enabled;
+					this.is_sensitive_flag_enabled = data.is_sensitive_flag_enabled;
+				})
+				.catch((error) => {
+					// In this specific case, even though it has been possibly disabled, we really need to see the error.
+					this.is_debug_enabled = true;
+					this.is_loading = false;
+
+					const event = new CustomEvent("error", { detail: error.response.data });
+					window.dispatchEvent(event);
+				});
+		},
+		cycleNsfwOverlayMode(detections?: App.Http.Resources.Models.NsfwDetectionResource[]): void {
+			const modes = ["hidden", "all", "block", "review", "sensitive"] as const;
+			const noSkip = new Set<string>(["hidden", "blurred", "all"]);
+			const hasCategory: Record<string, boolean> = {
+				block: detections?.some((d) => d.is_block) ?? false,
+				review: detections?.some((d) => d.is_review) ?? false,
+				sensitive: detections?.some((d) => d.is_sensitive) ?? false,
+			};
+			let idx = modes.indexOf(this.nsfw_overlay_mode as (typeof modes)[number]);
+			do {
+				idx = (idx + 1) % modes.length;
+			} while (!noSkip.has(modes[idx]) && !hasCategory[modes[idx]]);
+			this.nsfw_overlay_mode = modes[idx];
+		},
+	},
+});

@@ -1,0 +1,94 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Actions\Diagnostics\Pipes\Infos;
+
+use App\Actions\Diagnostics\Diagnostics;
+use App\Contracts\DiagnosticStringPipe;
+use App\Facades\Helpers;
+use App\Http\Resources\GalleryConfigs\UploadConfig;
+use Carbon\CarbonTimeZone;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
+use function Safe\ini_get;
+
+/**
+ * What system are we running on?
+ */
+class SystemInfo implements DiagnosticStringPipe
+{
+	/**
+	 * {@inheritDoc}
+	 */
+	public function handle(array &$data, \Closure $next): array
+	{
+		$db_version = $this->getSqlVersion();
+
+		// Output system information
+		$data[] = Diagnostics::line('System:', PHP_OS);
+		$data[] = Diagnostics::line('PHP Version:', phpversion());
+		$data[] = Diagnostics::line('PHP User agent:', ini_get('user_agent'));
+		$time_zone = CarbonTimeZone::create(config('app.timezone')) ?? null;
+		$data[] = Diagnostics::line('int size', $this->getByteSize());
+		$data[] = Diagnostics::line('Timezone:', $time_zone?->getName() ?? 'undefined');
+		$data[] = Diagnostics::line('Max uploaded file size:', ini_get('upload_max_filesize'));
+		$data[] = Diagnostics::line('Max post size:', ini_get('post_max_size'));
+		$data[] = Diagnostics::line('Chunk size:', Helpers::getSymbolByQuantity(UploadConfig::getUploadLimit()));
+		$data[] = Diagnostics::line('Max execution time: ', ini_get('max_execution_time'));
+		$data[] = Diagnostics::line($db_version['type'] . ' Version:', $db_version['version']);
+		$data[] = '';
+
+		return $next($data);
+	}
+
+	private function getByteSize(): string
+	{
+		$max_int = PHP_INT_MAX;
+		$byte_size = PHP_INT_SIZE;
+
+		// We compare to the string to avoid issues with 32-bit vs 64-bit systems and integer overflow.
+		if ("{$max_int}" === '9223372036854775807') {
+			return "64 bits {$byte_size}";
+		}
+
+		return "32 bits {$byte_size}";
+	}
+
+	/**
+	 * @return array{type:string,version:string} An array containing the SQL type and version
+	 */
+	private function getSqlVersion(): array
+	{
+		// About SQL version
+		// @codeCoverageIgnoreStart
+		try {
+			$sql = match (DB::getDriverName()) {
+				'mysql' => ['MySQL', 'select version() as version'],
+				'sqlite' => ['SQLite', 'select sqlite_version() as version'],
+				'pgsql' => ['PostgreSQL', 'select version() as version'],
+				default => [DB::getDriverName(), 'select version() as version'],
+			};
+
+			$dbtype = $sql[0];
+
+			$pdo = DB::connection()->getPdo();
+			$statement = $pdo->query($sql[1]);
+			if ($statement !== false) {
+				$dbver = (string) $statement->fetchColumn();
+			} else {
+				$dbver = 'unknown';
+			}
+		} catch (QueryException $e) {
+			$dbtype = 'Unknown SQL';
+			$dbver = 'unknown';
+		}
+		// @codeCoverageIgnoreEnd
+
+		return ['type' => $dbtype, 'version' => $dbver];
+	}
+}

@@ -1,103 +1,136 @@
 <?php
 
-/** @noinspection PhpUndefinedClassInspection */
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
 
 namespace App\Metadata;
 
-use App\Models\Configs;
-use App\Models\Logs;
-use Cache;
+use App\Exceptions\ExternalComponentFailedException;
+use App\Exceptions\LocationDecodingFailed;
+use App\Repositories\ConfigManager;
+use Geocoder\Exception\Exception as GeocoderException;
 use Geocoder\Provider\Cache\ProviderCache;
+use Geocoder\Provider\Nominatim\Model\NominatimAddress;
 use Geocoder\Provider\Nominatim\Nominatim;
 use Geocoder\Query\ReverseQuery;
 use Geocoder\StatefulGeocoder;
+use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\HandlerStack;
+use Illuminate\Contracts\Container\BindingResolutionException;
 use Spatie\GuzzleRateLimiterMiddleware\RateLimiterMiddleware;
-use Spatie\GuzzleRateLimiterMiddleware\Store;
 
+/**
+ * @codeCoverageIgnore We know it works.
+ */
 class Geodecoder
 {
 	/**
+	 * The local reverse geo-decoding endpoint, or '' if unset or the v8 feature is disabled.
+	 */
+	public static function localBaseUrl(): string
+	{
+		if (config('features.v8') !== true) {
+			return '';
+		}
+
+		return config('services.local-geo-decoding.base_url', '');
+	}
+
+	/**
 	 * Get http provider with caching.
 	 *
-	 * @return mixed Geocoder Provider
+	 * @return ProviderCache Geocoder Provider
+	 *
+	 * @throws ExternalComponentFailedException
 	 */
-	public static function getGeocoderProvider()
+	public static function getGeocoderProvider(): ProviderCache
 	{
-		$stack = HandlerStack::create();
-		$stack->push(RateLimiterMiddleware::perSecond(1));
+		$config_manager = app(ConfigManager::class);
+		try {
+			$local_base_url = self::localBaseUrl();
+			$is_local = $local_base_url !== '';
 
-		$httpClient = new \GuzzleHttp\Client([
-			'handler' => $stack,
-			'timeout' => Configs::get_value('location_decoding_timeout'),
-		]);
+			$stack = HandlerStack::create();
+			if (!$is_local) {
+				// The public Nominatim server enforces a strict usage policy; a self-hosted
+				// instance has no such limit, so requests can be sent unthrottled.
+				$stack->push(RateLimiterMiddleware::perSecond(config('features.location_decoding_requests_per_second', 1)));
+			}
 
-		$httpAdapter = new \Http\Adapter\Guzzle6\Client($httpClient);
+			$http_client = new \GuzzleHttp\Client([
+				'handler' => $stack,
+				'timeout' => $config_manager->getValueAsInt('location_decoding_timeout'),
+			]);
 
-		$provider = new Nominatim($httpAdapter, 'https://nominatim.openstreetmap.org', config('app.name'));
+			$http_adapter = new \Http\Adapter\Guzzle7\Client($http_client);
 
-		return new ProviderCache($provider, app('cache.store'));
+			$root_url = $is_local ? $local_base_url : 'https://nominatim.openstreetmap.org';
+
+			$provider = new Nominatim($http_adapter, $root_url, config('app.name'));
+
+			return new ProviderCache($provider, app('cache.store'));
+		} catch (GeocoderException|GuzzleException|\RuntimeException|BindingResolutionException|\InvalidArgumentException $e) {
+			throw new ExternalComponentFailedException('Could not create geocoder provider', $e);
+		}
 	}
 
 	/**
 	 * Decode GPS coordinates into location.
 	 *
-	 * @return string location
+	 * @return ?string location
+	 *
+	 * @throws ExternalComponentFailedException
 	 */
-	public static function decodeLocation($latitude, $longitude)
+	public static function decodeLocation(?float $latitude, ?float $longitude): ?string
 	{
+		$config_manager = app(ConfigManager::class);
+
 		// User does not want to decode location data
-		if (Configs::get_value('location_decoding') == false) {
+		if (!$config_manager->getValueAsBool('location_decoding')) {
 			return null;
 		}
-		if ($latitude == null || $longitude == null) {
+		if ($latitude === null || $longitude === null) {
 			return null;
 		}
 
-		$cachedProvider = Geodecoder::getGeocoderProvider();
+		$cached_provider = Geodecoder::getGeocoderProvider();
 
-		return Geodecoder::decodeLocation_core($latitude, $longitude, $cachedProvider);
+		return Geodecoder::decodeLocation_core($latitude, $longitude, $cached_provider);
 	}
 
 	/**
 	 * Wrapper to decode GPS coordinates into location.
 	 *
-	 * @return string location
+	 * @return ?string location
+	 *
+	 * @throws LocationDecodingFailed
 	 */
-	public static function decodeLocation_core($latitude, $longitude, $cachedProvider)
+	public static function decodeLocation_core(float $latitude, float $longitude, ProviderCache $cached_provider): ?string
 	{
-		$geocoder = new StatefulGeocoder($cachedProvider, Configs::get_value('lang'));
+		$config_manager = app(ConfigManager::class);
+
+		$lang = $config_manager->getValueAsString('lang');
+		$geocoder = new StatefulGeocoder($cached_provider, $lang);
 		try {
 			$result_list = $geocoder->reverseQuery(ReverseQuery::fromCoordinates($latitude, $longitude));
 
 			// If no result has been returned -> return null
 			if ($result_list->isEmpty()) {
-				Logs::warning(__METHOD__, __LINE__, 'Location (' . $latitude . ', ' . $longitude . ') could not be decoded.');
-
-				return null;
+				throw new LocationDecodingFailed('Location (' . $latitude . ', ' . $longitude . ') could not be decoded.');
 			}
 
-			return $result_list->first()->getDisplayName();
-			// @codeCoverageIgnoreStart
-		} catch (\Exception $exception) {
-			Logs::warning(__METHOD__, __LINE__, 'Decoding of location failed!');
-			Logs::warning(__METHOD__, __LINE__, $exception->getMessage());
+			/** @disregard P1013 */
+			/** @var NominatimAddress $address */
+			$address = $result_list->first();
 
-			return null;
+			return $address->getDisplayName();
+			// @codeCoverageIgnoreStart
+		} catch (GeocoderException $e) {
+			throw new LocationDecodingFailed('Location (' . $latitude . ', ' . $longitude . ') could not be decoded.', $e);
 		}
 		// @codeCoverageIgnoreEnd
-	}
-}
-
-class RateLimiterStore implements Store
-{
-	public function get(): array
-	{
-		return Cache::get('rate-limiter', []);
-	}
-
-	public function push(int $timestamp, int $limit)
-	{
-		Cache::put('rate-limiter', array_merge($this->get(), [$timestamp]));
 	}
 }

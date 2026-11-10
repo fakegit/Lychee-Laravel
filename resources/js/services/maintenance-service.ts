@@ -1,0 +1,178 @@
+import axios, { type AxiosResponse } from "axios";
+import Constants from "./constants";
+
+export type UpdateTreeData = {
+	id: string;
+	_lft: number;
+	_rgt: number;
+	parent_id: string | null;
+};
+
+const MaintenanceService = {
+	cleaningGet(path: string): Promise<AxiosResponse<App.Http.Resources.Diagnostics.CleaningState>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::cleaning`, { params: { path: path }, data: {} });
+	},
+	cleaningDo(path: string): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::cleaning`, { path: path });
+	},
+
+	jobsGet(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::jobs`, { data: {} });
+	},
+	jobsDo(): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::jobs`, {});
+	},
+
+	treeGet(): Promise<AxiosResponse<App.Http.Resources.Diagnostics.TreeState>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::tree`, { data: {} });
+	},
+	treeDo(): Promise<AxiosResponse<number>> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::tree`, {});
+	},
+
+	genSizeVariantsCheck(sv: App.Enum.SizeVariantType): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::genSizeVariants`, { data: {}, params: { variant: sv } });
+	},
+	genSizeVariantsDo(sv: App.Enum.SizeVariantType): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::genSizeVariants`, { variant: sv });
+	},
+
+	missingFileSizesCheck(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::missingFileSize`, { data: {} });
+	},
+	missingFileSizesDo(): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::missingFileSize`, {});
+	},
+
+	missingPalettesCheck(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::missingPalettes`, { data: {} });
+	},
+	missingPalettesDo(): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::missingPalettes`, {});
+	},
+
+	optimizeDo(): Promise<AxiosResponse<string[]>> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::optimize`, {});
+	},
+
+	flushDo(): Promise<AxiosResponse<string[]>> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::flushCache`, {});
+	},
+
+	register(key: string): Promise<AxiosResponse<App.Http.Resources.GalleryConfigs.RegisterData>> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::register`, { key: key });
+	},
+
+	fullTreeGet(): Promise<AxiosResponse<App.Http.Resources.Diagnostics.AlbumTree[]>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::fullTree`, { data: {} });
+	},
+
+	updateFullTree(albums: UpdateTreeData[]): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::fullTree`, { albums: albums });
+	},
+
+	getDuplicatesCount(): Promise<AxiosResponse<App.Http.Resources.Models.Duplicates.DuplicateCount>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::countDuplicates`, { data: {} });
+	},
+
+	getDuplicates(
+		withAlbumConstraint: boolean,
+		withChecksumConstraint: boolean,
+		withTitleConstraint: boolean,
+	): Promise<AxiosResponse<App.Http.Resources.Models.Duplicates.Duplicate[]>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::searchDuplicates`, {
+			data: {},
+			params: {
+				with_album_constraint: withAlbumConstraint,
+				with_checksum_constraint: withChecksumConstraint,
+				with_title_constraint: withTitleConstraint,
+			},
+		});
+	},
+
+	statisticsIntegrityCheckGet(): Promise<AxiosResponse<App.Http.Resources.Diagnostics.StatisticsCheckResource>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::statisticsIntegrity`, { data: {} });
+	},
+
+	statisticsIntegrityCheckDo(): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::statisticsIntegrity`, {});
+	},
+
+	oldOrdersCheck(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::oldOrders`, { data: {} });
+	},
+	oldOrdersDo(): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::oldOrders`, {});
+	},
+	fulfillOrdersCheck(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::fulfillOrders`, { data: {} });
+	},
+	fulfillOrdersDo(): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::fulfillOrders`, {});
+	},
+	fulfillPrecomputeCheck(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::fulfillPrecompute`, { data: {} });
+	},
+	fulfillPrecomputeDo(): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::fulfillPrecompute`, {});
+	},
+	flushQueueCheck(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::flushQueue`, { data: {} });
+	},
+	flushQueueDo(): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::flushQueue`, {});
+	},
+	backfillAlbumSizesCheck(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::backfillAlbumSizes`, { data: {} });
+	},
+	backfillAlbumSizesDo(): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::backfillAlbumSizes`, {});
+	},
+	recomputeBucketsDo(): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::recomputeBuckets`, {});
+	},
+	recomputeTakenAtRangeCheck(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::recomputeTakenAtRange`, { data: {} });
+	},
+	recomputeTakenAtRangeDo(): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::recomputeTakenAtRange`, {});
+	},
+	bulkScanFacesCheck(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::bulkScanFaces`, { data: {} });
+	},
+	bulkScanFacesDo(): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::bulkScanFaces`, {});
+	},
+	runFaceClusteringCheck(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::runFaceClustering`, { data: {} });
+	},
+	runFaceClusteringDo(): Promise<AxiosResponse> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::runFaceClustering`, {});
+	},
+	destroyDismissedFacesCheck(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::destroyDismissedFaces`, { data: {} });
+	},
+	destroyDismissedFacesDo(): Promise<AxiosResponse<{ deleted_count: number }>> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::destroyDismissedFaces`, {});
+	},
+	syncFaceEmbeddingsCheck(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::syncFaceEmbeddings`, { data: {} });
+	},
+	syncFaceEmbeddingsDo(): Promise<AxiosResponse<{ synced_count: number; missing_in_ai: number }>> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::syncFaceEmbeddings`, {});
+	},
+	resetFaceScanStatusCheck(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::resetFaceScanStatus`, { data: {} });
+	},
+	resetFaceScanStatusDo(): Promise<AxiosResponse<{ reset_count: number }>> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::resetFaceScanStatus`, {});
+	},
+	purgeOrphanFaceEmbeddingsCheck(): Promise<AxiosResponse<number>> {
+		return axios.get(`${Constants.getApiUrl()}Maintenance::purgeOrphanFaceEmbeddings`, { data: {} });
+	},
+	purgeOrphanFaceEmbeddingsDo(): Promise<AxiosResponse<{ purged_count: number }>> {
+		return axios.post(`${Constants.getApiUrl()}Maintenance::purgeOrphanFaceEmbeddings`, {});
+	},
+};
+
+export default MaintenanceService;

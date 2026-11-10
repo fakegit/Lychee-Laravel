@@ -1,0 +1,91 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Profile page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Perfil',
+    'login' => [
+        'header' => 'Perfil',
+        'enter_current_password' => 'Introduza a sua palavra-passe atual:',
+        'current_password' => 'Palavra-passe atual',
+        'credentials_update' => 'As suas credenciais serão alteradas para as seguintes:',
+        'username' => 'Nome de utilizador',
+        'change_password' => 'Alterar palavra-passe',
+        'cancel_password_change' => 'Cancelar alteração da palavra-passe',
+        'new_password' => 'Nova palavra-passe',
+        'confirm_new_password' => 'Confirmar nova palavra-passe',
+        'password_strength_info' => 'A força da palavra-passe é uma estimativa obtida com o <a href="https://github.com/dropbox/zxcvbn" class="inline-block border-b border-info border-dashed" target="_blank" rel="noreferrer">algoritmo zxcvbn</a>.',
+        'email_instruction' => 'Adicione o seu e-mail abaixo para receber notificações por e-mail. Para deixar de receber e-mails, basta remover o seu e-mail abaixo.',
+        'email' => 'E-mail',
+        'change' => 'Alterar dados de acesso',
+        'api_token' => 'API Token ...',
+        'missing_fields' => 'Campos em falta',
+        'ldap_managed' => 'As informações de login do usuário são gerenciadas pelo LDAP.',
+    ],
+    'register' => [
+        'username_exists' => 'O nome de utilizador já existe.',
+        'password_mismatch' => 'As palavras-passe não coincidem.',
+        'signup' => 'Registar',
+        'error' => 'Ocorreu um erro ao registar a sua conta.',
+        'success' => 'A sua conta foi criada com sucesso.',
+    ],
+    'admin_setup' => [
+        'header' => 'Configure a sua conta de administrador',
+        'welcome' => 'Bem-vindo ao Lychee,<br>vamos começar por criar uma conta de administrador.',
+        'submit' => 'Criar conta de administrador',
+        'success' => 'Conta de administrador criada com sucesso.',
+        'error' => 'Ocorreu um erro ao criar a conta de administrador.',
+        'already_exists' => 'Já foi configurada uma conta de administrador.',
+    ],
+    'token' => [
+        'unavailable' => 'Já visualizou este token.',
+        'no_data' => 'Não foi gerado nenhum token de API.',
+        'disable' => 'Desativar',
+        'disabled' => 'Token desativado',
+        'warning' => 'Este token não voltará a ser apresentado. Copie-o e guarde-o num local seguro.',
+        'reset' => 'Repor o token',
+        'create' => 'Criar um novo token',
+    ],
+    'oauth' => [
+        'header' => 'OAuth',
+        'header_not_available' => 'O OAuth não está disponível',
+        'setup_env' => 'Configure as credenciais no seu .env',
+        'token_registered' => 'Token %s registado.',
+        'setup' => 'Configurar %s',
+        'reset' => 'repor',
+        'credential_deleted' => 'Credencial eliminada!',
+    ],
+    'u2f' => [
+        'header' => 'Passkey/MFA/2FA',
+        'info' => 'Isto apenas permite usar o WebAuthn para autenticação em vez do nome de utilizador e palavra-passe.',
+        'empty' => 'A lista de credenciais está vazia!',
+        'not_secure' => 'Ambiente não seguro. U2F indisponível.',
+        'new' => 'Registar novo dispositivo.',
+        'credential_deleted' => 'Credencial eliminada!',
+        'credential_updated' => 'Credencial atualizada!',
+        'credential_registred' => 'Registo efetuado com sucesso!',
+        '5_chars' => 'Pelo menos 5 caracteres.',
+    ],
+    'preferences' => [
+        'header' => 'Preferências',
+        'save' => 'Guardar preferência',
+        'reset' => 'Repor',
+        'change_saved' => 'Preferência guardada!',
+    ],
+    'shared_albums' => [
+        'instruction' => 'Escolha como os álbuns partilhados (álbuns de outros utilizadores) aparecem na sua galeria:',
+        'mode_default' => 'Usar a predefinição do servidor',
+        'mode_default_desc' => 'Herdar o modo de visibilidade predefinido do servidor.',
+        'mode_show' => 'Mostrar em linha',
+        'mode_show_desc' => 'Os álbuns partilhados aparecem abaixo dos seus próprios álbuns.',
+        'mode_separate' => 'Separadores distintos',
+        'mode_separate_desc' => 'Ver os álbuns em separadores distintos "Os meus álbuns" e "Partilhados comigo".',
+        'mode_separate_shared_only' => 'Apenas partilhados',
+        'mode_separate_shared_only_desc' => 'Separadores distintos que mostram apenas os álbuns partilhados diretamente (exclui álbuns públicos).',
+        'mode_hide' => 'Ocultar',
+        'mode_hide_desc' => 'Não mostrar nenhum álbum partilhado.',
+    ],
+];

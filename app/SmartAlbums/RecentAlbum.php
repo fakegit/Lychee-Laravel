@@ -1,25 +1,58 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\SmartAlbums;
 
-use App\Models\Configs;
-use App\Models\Photo;
+use App\Enum\SmartAlbumType;
+use App\Exceptions\ConfigurationKeyMissingException;
+use App\Exceptions\Internal\FrameworkException;
+use App\Repositories\ConfigManager;
+use Carbon\Exceptions\InvalidFormatException;
+use Carbon\Exceptions\InvalidTimeZoneException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 
-class RecentAlbum extends SmartAlbum
+class RecentAlbum extends BaseSmartAlbum
 {
-	public $id = 'recent';
+	public const ID = SmartAlbumType::RECENT->value;
 
-	public function __construct()
+	/**
+	 * @throws InvalidFormatException
+	 * @throws InvalidTimeZoneException
+	 * @throws ConfigurationKeyMissingException
+	 * @throws FrameworkException
+	 */
+	protected function __construct()
 	{
-		parent::__construct();
+		$config_manager = resolve(ConfigManager::class);
+		$str_recent = $this->fromDateTime(
+			Carbon::now()->subDays($config_manager->getValueAsInt('recent_age'))
+		);
 
-		$this->title = 'recent';
-		$this->public = Configs::get_value('public_recent', '0') === '1';
+		parent::__construct(
+			id: SmartAlbumType::RECENT,
+			smart_condition: function (Builder $query) use ($str_recent): void {
+				$query->where('photos.created_at', '>=', $str_recent);
+			}
+		);
 	}
 
-	public function get_photos(): Builder
+	public static function getInstance(): self
 	{
-		return Photo::recent()->where(fn ($q) => $this->filter($q));
+		return new self();
+	}
+
+	/**
+	 * The `recent_age` cutoff moves with the clock, so a cached cover ages
+	 * out of this album without any photo write.
+	 */
+	public function isCachedThumbValid(string $photo_id): bool
+	{
+		return $this->containsPhoto($photo_id);
 	}
 }

@@ -1,0 +1,110 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Image\Handlers;
+
+use App\Contracts\Image\ImageHandlerInterface;
+use App\Contracts\Image\MediaFile;
+use App\Contracts\Image\StreamStats;
+use App\Exceptions\ConfigurationKeyMissingException;
+use App\Exceptions\MediaFileOperationException;
+use App\Image\Files\FlysystemFile;
+use App\Image\Files\NativeLocalFile;
+use App\Image\StreamStat;
+use App\Repositories\ConfigManager;
+use Illuminate\Support\Facades\Log;
+use Spatie\LaravelImageOptimizer\Facades\ImageOptimizer;
+
+abstract class BaseImageHandler implements ImageHandlerInterface
+{
+	public const JXL_UNSUPPORTED = 'JPEG XL requires Imagick with JXL support';
+
+	public function __destruct()
+	{
+		$this->reset();
+	}
+
+	/**
+	 * Whether this handler can read and write JPEG XL.
+	 */
+	protected function supportsJxl(): bool
+	{
+		return false;
+	}
+
+	/**
+	 * Refuses JPEG XL files when this handler cannot process them,
+	 * so that no other format is ever written behind a `.jxl` extension.
+	 *
+	 * @throws MediaFileOperationException
+	 */
+	protected function assertCanProcess(string $extension): void
+	{
+		if (strtolower($extension) === '.jxl' && !$this->supportsJxl()) {
+			throw new MediaFileOperationException(self::JXL_UNSUPPORTED);
+		}
+	}
+
+	/**
+	 * Whether `compression_quality` requests lossless encoding (0).
+	 */
+	protected function isLossless(): bool
+	{
+		return resolve(ConfigManager::class)->getValueAsInt('compression_quality') === 0;
+	}
+
+	/**
+	 * Returns the lossy compression quality (1..100).
+	 * Lossless (0) maps to 100 for formats without a lossless mode (e.g. JPEG).
+	 */
+	protected function resolveQuality(): int
+	{
+		$quality = resolve(ConfigManager::class)->getValueAsInt('compression_quality');
+
+		return $quality === 0 ? 100 : $quality;
+	}
+
+	/**
+	 * Optimizes a local image, if enabled.
+	 *
+	 * If lossless optimization is enabled via configuration, this method
+	 * tries to apply the optimization to the provided file.
+	 * If the file is not a local file, optimization is skipped and a warning
+	 * is logged.
+	 *
+	 * TODO: Do we really need it? It does neither seem lossless nor doing anything useful.
+	 *
+	 * @param bool $collect_statistics if true, the method returns statistics about the stream
+	 *
+	 * @return StreamStat|null optional statistics about the stream, if optimization took place and if requested
+	 *
+	 * @throws MediaFileOperationException
+	 * @throws ConfigurationKeyMissingException
+	 */
+	protected function applyLosslessOptimizationConditionally(MediaFile $file, bool $collect_statistics = false): ?StreamStats
+	{
+		$config_manager = resolve(ConfigManager::class);
+		if ($config_manager->getValueAsBool('lossless_optimization')) {
+			if ($file instanceof NativeLocalFile) {
+				ImageOptimizer::optimize($file->getRealPath());
+
+				return $collect_statistics ? StreamStat::createFromLocalFile($file) : null;
+			} elseif ($file instanceof FlysystemFile && $file->isLocalFile()) {
+				$local_file = $file->toLocalFile();
+				ImageOptimizer::optimize($local_file->getRealPath());
+
+				return $collect_statistics ? StreamStat::createFromLocalFile($local_file) : null;
+			}
+			Log::warning(__METHOD__ . ':' . __LINE__ . ' Skipping lossless optimization; optimization is requested by configuration but only supported for local files');
+
+			return null;
+		}
+
+		return null;
+	}
+}

@@ -1,22 +1,37 @@
 <?php
 
-/** @noinspection PhpUndefinedClassInspection */
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
 
 namespace App\Http\Controllers;
 
 use App\Actions\RSS\Generate;
-use App\Models\Configs;
+use App\Contracts\Exceptions\LycheeException;
+use App\Exceptions\ConfigurationException;
+use App\Services\GalleryLockState;
+use Illuminate\Routing\Controller;
 use Illuminate\Support\Collection;
+use Spatie\Feed\FeedItem;
 
 class RSSController extends Controller
 {
 	/**
-	 * @return Collection
+	 * Get the RSS Feed.
+	 *
+	 * @param Generate         $generate
+	 * @param GalleryLockState $gallery_lock
+	 *
+	 * @return Collection<int,FeedItem>
+	 *
+	 * @throws LycheeException
 	 */
-	public function getRSS(Generate $generate)
+	public function getRSS(Generate $generate, GalleryLockState $gallery_lock): Collection
 	{
-		if (Configs::get_value('rss_enable', '0') != '1') {
-			abort(404);
+		if (!$gallery_lock->isRssEnabled()) {
+			throw new ConfigurationException('RSS is disabled by configuration');
 		}
 
 		return $generate->do();

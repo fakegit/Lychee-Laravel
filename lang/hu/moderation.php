@@ -1,0 +1,57 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Moderation page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Moderálás',
+    'description' => 'Tekintse át és hagyja jóvá a "check" bizalmi szintű felhasználók által feltöltött fényképeket, mielőtt nyilvánossá válnak.',
+    'approve_selected' => 'Kijelöltek jóváhagyása',
+    'delete_selected' => 'Kijelöltek törlése',
+    'selected' => 'kijelölve',
+    'no_pending' => 'Nincs moderálásra váró fénykép.',
+    'approved' => 'A fényképek jóváhagyása sikeres.',
+    'col_thumbnail' => 'Bélyegkép',
+    'col_title' => 'Cím',
+    'col_owner' => 'Tulajdonos',
+    'col_album' => 'Album',
+    'col_uploaded' => 'Feltöltve',
+    'col_nsfw' => 'NSFW',
+    'nsfw_review' => 'NSFW-ellenőrzés',
+    'overlay_confidence' => 'Megbízhatóság: :value%',
+    'overlay_area' => 'Terület: :value',
+    'overlay_mode_all' => 'NSFW: Összes',
+    'overlay_mode_block' => 'NSFW: Tiltás',
+    'overlay_mode_review' => 'NSFW: Ellenőrzés',
+    'overlay_mode_sensitive' => 'NSFW: Érzékeny',
+    // Feature 089: moderation history and NSFW findings review.
+    'tab_pending' => 'Függőben',
+    'tab_history' => 'Előzmények',
+    'no_history' => 'Nincsenek moderálási előzmények.',
+    'col_photo' => 'Fénykép',
+    'col_event' => 'Esemény',
+    'col_by' => 'Végezte',
+    'col_date' => 'Dátum',
+    'event_held' => 'Visszatartva',
+    'event_approved' => 'Jóváhagyva',
+    'source_upload' => 'Feltöltés',
+    'source_nsfw_scan' => 'NSFW-vizsgálat',
+    'history_title' => 'Moderálás',
+    'history_show_all' => 'Összes megjelenítése (:count)',
+    'findings_title' => 'NSFW-találatok',
+    'findings_description' => 'Tekintse át az NSFW-találatokat, és vesse el a hibásakat. Az elvetett találatok törlődnek; egy új vizsgálat ismét megtalálhatja őket.',
+    'findings_empty' => 'Nincsenek NSFW-találatok.',
+    'findings_col_status' => 'Állapot',
+    'findings_col_findings' => 'Találatok',
+    'findings_col_albums' => 'Albumok',
+    'findings_hidden' => 'Rejtett',
+    'findings_dismiss' => 'Elvetés',
+    'findings_dismiss_all' => 'A fénykép összes találatának elvetése',
+    'findings_dismiss_selected' => 'Kijelöltek elvetése',
+    'findings_confirm_header' => 'Találatok elvetése',
+    'findings_confirm' => ':count fénykép összes találatát elveti? A találatok törlődnek.',
+    'findings_dismissed' => 'Találatok elvetve.',
+    'findings_error' => 'Az NSFW-találatokat nem sikerült betölteni vagy módosítani.',
+];

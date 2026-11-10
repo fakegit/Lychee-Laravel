@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" bootstrap="vendor/autoload.php" colors="true" processIsolation="false" stopOnFailure="false" xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/13.3/phpunit.xsd">
+  <coverage>
+    <report>
+      <clover outputFile="clover.xml"/>
+      <text outputFile="php://stdout" showUncoveredFiles="false"/>
+    </report>
+  </coverage>
+  <testsuites>
+    <testsuite name="Unit">
+      <directory suffix="Test.php">./tests/Unit</directory>
+      <exclude>./tests/Unit/Http/Requests/Base/BaseRequestTest.php</exclude>
+    </testsuite>
+    <testsuite name="Feature_v2">
+      <directory suffix="Test.php">./tests/Feature_v2</directory>
+      <exclude>./tests/Feature_v2/Base/BaseApiTest.php</exclude>
+      <exclude>./tests/Feature_v2/Base/BaseApiWithDataTest.php</exclude>
+      <exclude>./tests/Feature_v2/ImageHandlers/BaseImageHandler.php</exclude>
+    </testsuite>
+    <testsuite name="Feature_v3">
+      <directory suffix="Test.php">./tests/Feature_v3</directory>
+      <exclude>./tests/Feature_v3/Base/BaseApiWithDataTest.php</exclude>
+    </testsuite>
+    <testsuite name="Install">
+      <directory suffix="Test.php">./tests/Install</directory>
+    </testsuite>
+    <testsuite name="ImageProcessing">
+      <directory suffix="Test.php">./tests/ImageProcessing</directory>
+    </testsuite>
+    <testsuite name="Precomputing">
+      <directory suffix="Test.php">./tests/Precomputing</directory>
+      <exclude>./tests/Precomputing/Base/BasePrecomputingTest.php</exclude>
+    </testsuite>
+    <testsuite name="Webshop">
+      <directory suffix="Test.php">./tests/Webshop</directory>
+      <exclude>./tests/Webshop/Checkout/BaseCheckoutControllerTest.php</exclude>
+    </testsuite>
+    <testsuite name="AssistedVision">
+      <directory suffix="Test.php">./tests/AssistedVision</directory>
+    </testsuite>
+  </testsuites>
+  <extensions>
+    <bootstrap class="Tests\BootExtension"/>
+  </extensions>
+  <logging/>
+  <php>
+    <env name="APP_ENV" value="testing"/>
+    <env name="DB_LOG_SQL" value="false"/>
+    <env name="DB_LOG_SQL_EXPLAIN" value="false"/>
+    <env name="BCRYPT_ROUNDS" value="4"/>
+    <env name="CACHE_STORE" value="array"/>
+    <env name="SESSION_DRIVER" value="array"/>
+    <env name="QUEUE_CONNECTION" value="sync"/>
+    <env name="MAIL_DRIVER" value="array"/>
+    <env name="STRIPE_API_KEY" value=""/>
+    <env name="STRIPE_PUBLISHABLE_KEY" value=""/>
+    <env name="MOLLIE_API_KEY" value=""/>
+    <env name="MOLLIE_PROFILE_ID" value=""/>
+    <env name="PAYPAL_CLIENT_ID" value=""/>
+    <env name="PAYPAL_SECRET" value=""/>
+    <env name="V8_ENABLED" value="true"/>
+    <env name="WEBSHOP_ENABLED" value="true"/>
+  </php>
+  <source>
+    <include>
+      <directory suffix=".php">
+        ./app
+      </directory>
+    </include>
+  </source>
+</phpunit>

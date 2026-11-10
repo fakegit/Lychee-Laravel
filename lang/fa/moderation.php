@@ -1,0 +1,57 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Moderation page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'نظارت',
+    'description' => 'عکس‌های بارگذاری‌شده توسط کاربران با سطح اعتماد «بررسی» را پیش از نمایش عمومی، بازبینی و تأیید کنید.',
+    'approve_selected' => 'تأیید موارد انتخاب‌شده',
+    'delete_selected' => 'حذف موارد انتخاب‌شده',
+    'selected' => 'انتخاب‌شده',
+    'no_pending' => 'هیچ عکسی در انتظار نظارت نیست.',
+    'approved' => 'عکس‌ها با موفقیت تأیید شدند.',
+    'col_thumbnail' => 'تصویر کوچک',
+    'col_title' => 'عنوان',
+    'col_owner' => 'مالک',
+    'col_album' => 'آلبوم',
+    'col_uploaded' => 'تاریخ بارگذاری',
+    'col_nsfw' => 'محتوای نامناسب',
+    'nsfw_review' => 'بازبینی محتوای نامناسب',
+    'overlay_confidence' => 'اطمینان: :value%',
+    'overlay_area' => 'ناحیه: :value',
+    'overlay_mode_all' => 'محتوای نامناسب: همه',
+    'overlay_mode_block' => 'محتوای نامناسب: مسدود',
+    'overlay_mode_review' => 'محتوای نامناسب: بازبینی',
+    'overlay_mode_sensitive' => 'محتوای نامناسب: حساس',
+    // Feature 089: moderation history and NSFW findings review.
+    'tab_pending' => 'در انتظار',
+    'tab_history' => 'تاریخچه',
+    'no_history' => 'تاریخچه نظارتی وجود ندارد.',
+    'col_photo' => 'عکس',
+    'col_event' => 'رویداد',
+    'col_by' => 'توسط',
+    'col_date' => 'تاریخ',
+    'event_held' => 'نگه‌داشته‌شده',
+    'event_approved' => 'تأییدشده',
+    'source_upload' => 'بارگذاری',
+    'source_nsfw_scan' => 'اسکن NSFW',
+    'history_title' => 'نظارت',
+    'history_show_all' => 'نمایش همه (:count)',
+    'findings_title' => 'یافته‌های NSFW',
+    'findings_description' => 'یافته‌های NSFW را بازبینی کنید و موارد نادرست را رد کنید. یافته‌های ردشده حذف می‌شوند؛ اسکن جدید ممکن است دوباره آن‌ها را پیدا کند.',
+    'findings_empty' => 'یافته NSFW وجود ندارد.',
+    'findings_col_status' => 'وضعیت',
+    'findings_col_findings' => 'یافته‌ها',
+    'findings_col_albums' => 'آلبوم‌ها',
+    'findings_hidden' => 'پنهان',
+    'findings_dismiss' => 'رد کردن',
+    'findings_dismiss_all' => 'رد کردن همه یافته‌های این عکس',
+    'findings_dismiss_selected' => 'رد کردن موارد انتخاب‌شده',
+    'findings_confirm_header' => 'رد کردن یافته‌ها',
+    'findings_confirm' => 'همه یافته‌های :count عکس رد شوند؟ این یافته‌ها حذف می‌شوند.',
+    'findings_dismissed' => 'یافته‌ها رد شدند.',
+    'findings_error' => 'بارگذاری یا تغییر یافته‌های NSFW ممکن نشد.',
+];

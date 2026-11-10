@@ -1,0 +1,295 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+/**
+ * We don't care for unhandled exceptions in tests.
+ * It is the nature of a test to throw an exception.
+ * Without this suppression we had 100+ Linter warning in this file which
+ * don't help anything.
+ *
+ * @noinspection PhpDocMissingThrowsInspection
+ * @noinspection PhpUnhandledExceptionInspection
+ */
+
+namespace Tests\Unit\Services;
+
+use App\Models\Configs;
+use App\Repositories\ConfigManager;
+use App\Services\UrlValidation;
+use Tests\AbstractTestCase;
+
+class UrlValidationTest extends AbstractTestCase
+{
+	private UrlValidation $url_validation;
+
+	public function setUp(): void
+	{
+		parent::setUp();
+		$this->url_validation = $this->makeUrlValidation();
+
+		Configs::set('import_via_url_require_https', '1');
+		Configs::set('import_via_url_forbidden_ports', '1');
+		Configs::set('import_via_url_forbidden_local_ip', '1');
+		Configs::set('import_via_url_forbidden_localhost', '1');
+	}
+
+	public function tearDown(): void
+	{
+		Configs::set('import_via_url_require_https', '1');
+		Configs::set('import_via_url_forbidden_ports', '1');
+		Configs::set('import_via_url_forbidden_local_ip', '1');
+		Configs::set('import_via_url_forbidden_localhost', '1');
+
+		parent::tearDown();
+	}
+
+	/**
+	 * @param \Closure|null $dns_get_record
+	 */
+	private function makeUrlValidation(?\Closure $dns_get_record = null): UrlValidation
+	{
+		return new UrlValidation(
+			resolve(ConfigManager::class),
+			$dns_get_record ?? fn (string $hostname, int $type = DNS_A) => [],
+		);
+	}
+
+	public function testNonStringValue(): void
+	{
+		$dto = $this->url_validation->validate(123);
+
+		self::assertEquals('', $dto->url);
+		self::assertNull($dto->resolved_ip);
+		self::assertEquals('is not a string.', $dto->error);
+	}
+
+	public function testNullValue(): void
+	{
+		$dto = $this->url_validation->validate(null);
+
+		self::assertEquals('', $dto->url);
+		self::assertNull($dto->resolved_ip);
+		self::assertEquals('is not a string.', $dto->error);
+	}
+
+	public function testInvalidUrlFormat(): void
+	{
+		$dto = $this->url_validation->validate('not-a-url');
+
+		self::assertEquals('not-a-url', $dto->url);
+		self::assertNull($dto->resolved_ip);
+		self::assertEquals('is not a valid URL.', $dto->error);
+	}
+
+	public function testHttpsRequiredButNotProvided(): void
+	{
+		$dto = $this->url_validation->validate('http://example.com');
+
+		self::assertEquals('must be a valid HTTPS URL.', $dto->error);
+	}
+
+	public function testUnsupportedScheme(): void
+	{
+		Configs::set('import_via_url_require_https', '0');
+
+		$dto = $this->url_validation->validate('ftp://example.com');
+
+		self::assertEquals('must be a valid HTTP or HTTPS URL.', $dto->error);
+	}
+
+	public function testForbiddenPort(): void
+	{
+		$dto = $this->url_validation->validate('https://example.com:8080');
+
+		self::assertEquals('must use a valid port such as 80 or 443.', $dto->error);
+	}
+
+	public function testAllowedPort(): void
+	{
+		$this->url_validation = $this->makeUrlValidation(fn (string $hostname, int $type = DNS_A) => match ($type) {
+			DNS_A => [['ip' => '93.184.216.34']],
+			default => [],
+		});
+
+		$dto = $this->url_validation->validate('https://example.com:80');
+
+		self::assertNull($dto->error);
+		self::assertEquals('93.184.216.34', $dto->resolved_ip);
+	}
+
+	public function testForbiddenPrivateIp(): void
+	{
+		$dto = $this->url_validation->validate('https://192.168.1.1');
+
+		self::assertEquals('must not resolve to a private or reserved IP address.', $dto->error);
+	}
+
+	public function testForbiddenLocalIp(): void
+	{
+		$to_be_blocked = [
+			// normal ips
+			'https://127.0.0.1',
+			'https://192.168.1.1',
+			// Long ips
+			'https://2130706433',
+			'https://3232235521',
+			'https://2852039166',
+			// Hex upper
+			'https://0X7F000001',
+			'https://0X7F.0.0.1',
+			// Hex lower
+			'https://0x7f000001',
+			'https://0x7f.0.0.1',
+			// Octal
+			'https://0177.0.0.1',
+			'https://0254.16.0.1',
+			// Shortened or compressed forms of IPs
+			'https://127.1',
+			'https://0',
+			// Ipv6 format
+			'https://[::ffff:127.0.0.1]',
+		];
+
+		foreach ($to_be_blocked as $url) {
+			$dto = $this->url_validation->validate($url);
+			self::assertEquals('must not resolve to a private or reserved IP address.', $dto->error, $url . ' should be blocked');
+		}
+	}
+
+	public function testForbiddenLocalhost(): void
+	{
+		Configs::set('import_via_url_forbidden_local_ip', '0');
+
+		$dto = $this->url_validation->validate('https://localhost');
+
+		self::assertEquals('must not resolve to localhost.', $dto->error);
+	}
+
+	public function testForbiddenPrivateIpViaHostname(): void
+	{
+		$this->url_validation = $this->makeUrlValidation(fn (string $hostname, int $type = DNS_A) => match ($type) {
+			DNS_A => [['ip' => '192.168.0.1']],
+			default => [],
+		});
+
+		$dto = $this->url_validation->validate('https://evil.example.com/test.jpg');
+
+		self::assertEquals('must not resolve to a private or reserved IP address.', $dto->error);
+	}
+
+	public function testForbiddenLocalhostViaHostnameIpv4(): void
+	{
+		$this->url_validation = $this->makeUrlValidation(fn (string $hostname, int $type = DNS_A) => match ($type) {
+			DNS_A => [['ip' => '127.0.0.1']],
+			default => [],
+		});
+		Configs::set('import_via_url_forbidden_local_ip', '0');
+
+		$dto = $this->url_validation->validate('https://evil.example.com/test.jpg');
+
+		self::assertEquals('must not resolve to localhost.', $dto->error);
+	}
+
+	public function testForbiddenLocalhostViaHostnameIpv6(): void
+	{
+		$this->url_validation = $this->makeUrlValidation(fn (string $hostname, int $type = DNS_AAAA) => match ($type) {
+			DNS_AAAA => [['ipv6' => '::1']],
+			default => [],
+		});
+		Configs::set('import_via_url_forbidden_local_ip', '0');
+
+		$dto = $this->url_validation->validate('https://evil.example.com/test.jpg');
+
+		self::assertEquals('must not resolve to localhost.', $dto->error);
+	}
+
+	public function testValidUrlWithNoRestrictionsCorrectScheme(): void
+	{
+		Configs::set('import_via_url_require_https', '0');
+		Configs::set('import_via_url_forbidden_ports', '0');
+		Configs::set('import_via_url_forbidden_local_ip', '0');
+		Configs::set('import_via_url_forbidden_localhost', '0');
+
+		$dto = $this->url_validation->validate('http://192.168.0.1:5432');
+
+		self::assertNull($dto->error);
+		self::assertEquals('192.168.0.1', $dto->resolved_ip);
+	}
+
+	public function testValidUrlWithNoRestrictionsAndUnresolvedHost(): void
+	{
+		Configs::set('import_via_url_require_https', '0');
+		Configs::set('import_via_url_forbidden_ports', '0');
+		Configs::set('import_via_url_forbidden_local_ip', '0');
+		Configs::set('import_via_url_forbidden_localhost', '0');
+
+		$dto = $this->url_validation->validate('http://example.com:5432');
+
+		self::assertNull($dto->error);
+		self::assertNull($dto->resolved_ip);
+	}
+
+	public function testForbiddenNat64ExpandedSpellingLiteral(): void
+	{
+		// 64:ff9b:0:0:0:0:7f00:1 is the NAT64 mapping of 127.0.0.1 written in expanded form.
+		$dto = $this->url_validation->validate('https://[64:ff9b:0:0:0:0:7f00:1]/test.jpg');
+
+		self::assertEquals('must not resolve to a private or reserved IP address.', $dto->error);
+	}
+
+	public function testForbiddenNat64UppercaseLiteral(): void
+	{
+		$dto = $this->url_validation->validate('https://[64:FF9B::7F00:1]/test.jpg');
+
+		self::assertEquals('must not resolve to a private or reserved IP address.', $dto->error);
+	}
+
+	public function testForbiddenNat64MetadataViaHostname(): void
+	{
+		// 64:ff9b::a9fe:a9fe is the NAT64 mapping of 169.254.169.254 (cloud metadata).
+		$this->url_validation = $this->makeUrlValidation(fn (string $hostname, int $type = DNS_AAAA) => match ($type) {
+			DNS_AAAA => [['ipv6' => '64:ff9b::a9fe:a9fe']],
+			default => [],
+		});
+
+		$dto = $this->url_validation->validate('https://evil.example.com/test.jpg');
+
+		self::assertEquals('must not resolve to a private or reserved IP address.', $dto->error);
+	}
+
+	public function testForbiddenNat64LocalUsePrefixLiteral(): void
+	{
+		// RFC 8215 local-use NAT64 (64:ff9b:1::/48).
+		$dto = $this->url_validation->validate('https://[64:ff9b:1::7f00:1]/test.jpg');
+
+		self::assertEquals('must not resolve to a private or reserved IP address.', $dto->error);
+	}
+
+	public function testForbidden6to4PrivateLiteral(): void
+	{
+		// 6to4 (2002::/16) embedding 127.0.0.1.
+		$dto = $this->url_validation->validate('https://[2002:7f00:1::]/test.jpg');
+
+		self::assertEquals('must not resolve to a private or reserved IP address.', $dto->error);
+	}
+
+	public function testForbiddenIpv4MappedLoopbackLiteral(): void
+	{
+		$dto = $this->url_validation->validate('https://[::ffff:127.0.0.1]/test.jpg');
+
+		self::assertEquals('must not resolve to a private or reserved IP address.', $dto->error);
+	}
+
+	public function testAllowedNat64PublicLiteral(): void
+	{
+		// 64:ff9b::808:808 is the NAT64 mapping of 8.8.8.8 (public) and must not be blocked.
+		$dto = $this->url_validation->validate('https://[64:ff9b::808:808]/test.jpg');
+
+		self::assertNull($dto->error);
+	}
+}

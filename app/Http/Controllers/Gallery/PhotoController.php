@@ -1,0 +1,514 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Http\Controllers\Gallery;
+
+use App\Actions\Import\FromUrl;
+use App\Actions\Photo\Delete;
+use App\Actions\Photo\MoveOrDuplicate;
+use App\Actions\Photo\Rating;
+use App\Actions\Photo\Rotate;
+use App\Constants\FileSystem;
+use App\Contracts\Models\AbstractAlbum;
+use App\Enum\FileStatus;
+use App\Enum\SizeVariantType;
+use App\Events\PhotoHighlightToggled;
+use App\Events\PhotoSaved;
+use App\Events\PhotoTagsChanged;
+use App\Exceptions\ConfigurationException;
+use App\Exceptions\ConflictingPropertyException;
+use App\Exceptions\MediaFileUnsupportedException;
+use App\Factories\IdFactory;
+use App\Http\Requests\Photo\CopyPhotosRequest;
+use App\Http\Requests\Photo\DeletePhotosRequest;
+use App\Http\Requests\Photo\EditPhotoRequest;
+use App\Http\Requests\Photo\FromUrlRequest;
+use App\Http\Requests\Photo\GetPhotoAlbumsRequest;
+use App\Http\Requests\Photo\MovePhotosRequest;
+use App\Http\Requests\Photo\RenamePhotoRequest;
+use App\Http\Requests\Photo\RotatePhotoRequest;
+use App\Http\Requests\Photo\SetPhotoRatingRequest;
+use App\Http\Requests\Photo\SetPhotosHighlightedRequest;
+use App\Http\Requests\Photo\SetPhotosLicenseRequest;
+use App\Http\Requests\Photo\SetPhotosTagsRequest;
+use App\Http\Requests\Photo\UploadPhotoRequest;
+use App\Http\Requests\Photo\WatermarkPhotoRequest;
+use App\Http\Resources\Editable\UploadMetaResource;
+use App\Http\Resources\Models\PhotoAlbumResource;
+use App\Http\Resources\Models\PhotoResource;
+use App\Image\Files\NativeLocalFile;
+use App\Image\Files\ProcessableJobFile;
+use App\Image\Files\UploadedFile;
+use App\Jobs\EmbedMetadataJob;
+use App\Jobs\ExtractZip;
+use App\Jobs\ProcessImageJob;
+use App\Jobs\RecomputePhotoBucketsJob;
+use App\Jobs\WatermarkerJob;
+use App\Models\Extensions\BaseAlbum;
+use App\Models\Photo;
+use App\Models\SizeVariant;
+use App\Models\Tag;
+use App\Models\User;
+use App\Policies\AlbumPolicy;
+use App\Policies\PhotoPolicy;
+use App\Repositories\ConfigManager;
+use App\Services\BucketKeys;
+use App\Services\MonthDayKey;
+use App\Services\Telemetry\TraceService;
+use App\Services\TitleSplitter;
+use Illuminate\Routing\Controller;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
+use LycheeVerify\Contract\VerifyInterface;
+
+/**
+ * Controller responsible for fetching Photo Data.
+ */
+class PhotoController extends Controller
+{
+	public function __construct(
+		private readonly TraceService $trace,
+	) {
+	}
+
+	/**
+	 * Upload a picture.
+	 *
+	 * @throws ConflictingPropertyException
+	 */
+	public function upload(UploadPhotoRequest $request): UploadMetaResource
+	{
+		// Reset max memory usage before measuring
+		memory_reset_peak_usage();
+
+		return $this->trace->traceMethod('photo.upload', function () use ($request) {
+			$this->trace->addEventWithMemToCurrentSpan('Upload photo');
+
+			$meta = $request->meta();
+			$file = new UploadedFile($request->uploaded_file_chunk());
+
+			// Set up meta data if not already present
+			$meta->extension ??= '.' . pathinfo($meta->file_name, PATHINFO_EXTENSION);
+			$meta->uuid_name ??= strtr(base64_encode(random_bytes(12)), '+/', '-_') . $meta->extension;
+
+			$is_last_chunk = $meta->chunk_number >= $meta->total_chunks;
+
+			$final = new NativeLocalFile(Storage::disk(FileSystem::IMAGE_UPLOAD)->path($meta->uuid_name));
+			$final->append($file->read());
+			$request->completeChunkUpload($meta->uuid_name, $meta->chunk_number, $is_last_chunk);
+
+			if (!$is_last_chunk) {
+				// Not the last chunk
+				return $meta;
+			}
+
+			// Last chunk — generate expected_id for non-zip uploads and store title/description.
+			$meta->stage = FileStatus::PROCESSING;
+			$meta->title = $request->title();
+			$meta->description = $request->description();
+
+			$is_zip = strtolower(pathinfo($meta->file_name, PATHINFO_EXTENSION)) === 'zip';
+			if (!$is_zip) {
+				$id_factory = resolve(IdFactory::class);
+				$meta->expected_id = $id_factory->createRandomID();
+			}
+
+			$this->trace->addMemoryInfoToCurrentSpan();
+
+			return $this->process(
+				$request->verify(),
+				$request->configs(),
+				$final,
+				$request->album(),
+				$request->file_last_modified_time(),
+				$request->apply_watermark(),
+				$meta);
+		});
+	}
+
+	private function process(
+		VerifyInterface $verify,
+		ConfigManager $config_manager,
+		NativeLocalFile $final,
+		?AbstractAlbum $album,
+		?int $file_last_modified_time,
+		?bool $apply_watermark,
+		UploadMetaResource $meta,
+	): UploadMetaResource {
+		return $this->trace->traceMethod('photo.process', function () use ($verify,
+			$config_manager,
+			$final,
+			$album,
+			$file_last_modified_time,
+			$apply_watermark,
+			$meta) {
+			$processable_file = new ProcessableJobFile(
+				$final->getOriginalExtension(),
+				$meta->file_name
+			);
+			$processable_file->write($final->read());
+
+			$final->close();
+			$final->delete();
+			$processable_file->close();
+			// End of work-around
+
+			$is_zip = strtolower(pathinfo($meta->file_name, PATHINFO_EXTENSION)) === 'zip';
+			$is_se = $verify->is_supporter();
+
+			if ($is_se && $config_manager->getValueAsBool('extract_zip_on_upload') && $is_zip) {
+				ExtractZip::dispatch($processable_file, $album?->get_id(), $file_last_modified_time);
+				// We return DONE no matter what:
+				// - if we are in sync mode, this will be executed after the job
+				// - if we are in async mode, the job will be executed later, but we need to notify the front-end we are clear.
+				$meta->stage = FileStatus::DONE;
+
+				return $meta;
+			}
+
+			$this->trace->traceMethod('photo.dispatch', function () use ($processable_file,
+				$album,
+				$file_last_modified_time,
+				$apply_watermark, $meta): void {
+				ProcessImageJob::dispatch($processable_file, $album, $file_last_modified_time, $apply_watermark, $meta->expected_id, $meta->title, $meta->description);
+				$meta->stage = config('queue.default') === 'sync' ? FileStatus::DONE : FileStatus::READY;
+			});
+
+			$this->trace->addEventWithMemToCurrentSpan('End of image processing');
+
+			return $meta;
+		});
+	}
+
+	/**
+	 * Upload a picture from a URL.
+	 */
+	public function fromUrl(FromUrlRequest $request, FromUrl $from_url): string
+	{
+		$user_id = Auth::id();
+		$from_url->do($request->urls(), $request->album(), $user_id);
+
+		return 'success';
+	}
+
+	/**
+	 * Update the info of a picture.
+	 */
+	public function update(EditPhotoRequest $request): PhotoResource
+	{
+		$photo = $request->photo();
+
+		// Captured before any mutation below: by the time PhotoSaved is
+		// dispatched (after save()), the DB row already holds the new
+		// values, so this is the only place the PREVIOUS Timeline sort date
+		// is still available - see PhotoSaved::$previous_dates.
+		$previous_dates = [
+			'created_at' => $photo->getRawOriginal('created_at'),
+			'taken_key' => $photo->getRawOriginal('taken_key'),
+		];
+
+		$photo->title = $request->title();
+		$title_split = TitleSplitter::split($photo->title);
+		$photo->title_base = $title_split->base;
+		$photo->title_index = $title_split->index;
+		$photo->title_date_key = BucketKeys::titleDateKey($photo->title);
+		$photo->description = $request->description();
+		$photo->created_at = $request->uploadDate();
+
+		$existing_tags = Tag::from($request->tags());
+		$old_tag_ids = $photo->tags()->pluck('tags.id')->all();
+		$photo->tags()->sync($existing_tags->pluck('id'));
+		$photo->load('tags');
+		PhotoTagsChanged::dispatch([$photo->id], array_values(array_unique([...$old_tag_ids, ...$existing_tags->pluck('id')->all()])));
+		$photo->license = $request->license()->value;
+
+		// if the request takenAt is null, then we set the initial value back.
+		$photo->taken_at = $request->takenAt() ?? $photo->initial_taken_at;
+		$photo->taken_key = BucketKeys::takenKey($photo->taken_at);
+		// FR-106-03: follows the taken date, else the upload date set above.
+		$photo->month_day_key = MonthDayKey::of($photo->taken_at, $photo->created_at);
+
+		// Feature 082: the manual 360° flag, left untouched when not sent (v7).
+		$photo->is_360 = $request->is360() ?? $photo->is_360;
+
+		$photo->save();
+
+		// title/created_at/taken_at are bucket-relevant columns - created_at
+		// is writable here via uploadDate() above - recompute every album
+		// this photo is linked into whenever any of them actually changed
+		// (FR-092-10). Explicit call site, not an Eloquent hook.
+		$bucket_relevant_changed = $photo->wasChanged(['title', 'title_base', 'title_date_key', 'created_at', 'taken_at', 'taken_key']);
+		RecomputePhotoBucketsJob::dispatchIf($bucket_relevant_changed, $photo->id);
+
+		// RecomputePhotoBucketsJob (above) only reaches real albums via their
+		// `photo_album` pivot rows - Timeline is a smart album with no such
+		// row, so its own cached buckets/ratios/details need this separate,
+		// explicit signal whenever the sort date may have moved this photo
+		// into a different Timeline bucket.
+		// is_360 is not bucket-relevant, but it is part of the cached
+		// listings (`is_360s`), which PhotoSaved also evicts.
+		PhotoSaved::dispatchIf($bucket_relevant_changed || $photo->wasChanged('is_360'), [$photo->id], [$photo->id => $previous_dates]);
+
+		EmbedMetadataJob::dispatchIf($request->configs()->getValueAsBool('embed_metadata_in_files_enabled'), $photo);
+
+		return new PhotoResource(
+			photo: $photo,
+			album_id: $request->from_album()?->get_id(),
+			should_downgrade_size_variants: !Gate::check(PhotoPolicy::CAN_ACCESS_FULL_PHOTO, [Photo::class, $photo])
+		);
+	}
+
+	/**
+	 * Set the is-highlighted attribute of the given photos.
+	 */
+	public function highlight(SetPhotosHighlightedRequest $request): void
+	{
+		foreach ($request->photos() as $photo) {
+			$photo->is_highlighted = $request->isHighlighted();
+			$photo->save();
+
+			// is_highlighted is a bucket-relevant column - recompute every
+			// album this photo is linked into whenever it actually changed.
+			RecomputePhotoBucketsJob::dispatchIf($photo->wasChanged('is_highlighted'), $photo->id);
+		}
+		$photo_ids = $request->photos()->map(fn (Photo $photo) => $photo->id)->all();
+
+		PhotoHighlightToggled::dispatch($photo_ids);
+	}
+
+	/**
+	 * Set the rating for a photo.
+	 *
+	 * @param SetPhotoRatingRequest $request
+	 * @param Rating                $rating
+	 *
+	 * @return PhotoResource
+	 *
+	 * @throws ConflictingPropertyException
+	 */
+	public function rate(SetPhotoRatingRequest $request, Rating $rating): PhotoResource
+	{
+		/** @var User $user */
+		$user = Auth::user();
+
+		$photo = $rating->do(
+			$request->photo(),
+			$user,
+			$request->rating()
+		);
+
+		// Only the photo owner's own rating gets embedded into the file —
+		// EXIF/XMP has room for exactly one "Rating" value, and only the
+		// owner's opinion is authoritative for what gets embedded.
+		$shoud_dispatch = $user->id === $photo->owner_id && $request->configs()->getValueAsBool('embed_metadata_in_files_enabled');
+		EmbedMetadataJob::dispatchIf($shoud_dispatch, $photo);
+
+		return new PhotoResource(
+			photo: $photo,
+			album_id: null,
+			should_downgrade_size_variants: !Gate::check(PhotoPolicy::CAN_ACCESS_FULL_PHOTO, [Photo::class, $photo])
+		);
+	}
+
+	/**
+	 * Moves the photos to an album.
+	 */
+	public function move(MovePhotosRequest $request, MoveOrDuplicate $move): void
+	{
+		$move->do(
+			photos: $request->photos(),
+			from_album: $request->from_album(),
+			to_album: $request->album()
+		);
+	}
+
+	/**
+	 * Delete one or more photos.
+	 */
+	public function delete(DeletePhotosRequest $request, Delete $delete): void
+	{
+		$delete->do($request->photoIds(), $request->from_id());
+	}
+
+	/**
+	 * Given a photoID and a direction (+1: 90° clockwise, -1: 90° counterclockwise) rotate an image.
+	 */
+	public function rotate(RotatePhotoRequest $request): PhotoResource
+	{
+		if (!$request->configs()->getValueAsBool('editor_enabled')) {
+			throw new ConfigurationException('support for rotation disabled by configuration');
+		}
+
+		if ($request->photo()->is_360 === true) {
+			throw new MediaFileUnsupportedException('360° photos cannot be rotated');
+		}
+
+		$rotate_strategy = new Rotate($request->photo(), $request->direction());
+		$photo = $rotate_strategy->do();
+
+		return new PhotoResource(
+			photo: $photo,
+			album_id: $request->from_album()?->get_id(),
+			should_downgrade_size_variants: !Gate::check(PhotoPolicy::CAN_ACCESS_FULL_PHOTO, [Photo::class, $photo])
+		);
+	}
+
+	/**
+	 * Copy a photos to an album.
+	 * Only the SQL entry is duplicated for space reason.
+	 */
+	public function copy(CopyPhotosRequest $request, MoveOrDuplicate $duplicate): void
+	{
+		$duplicate->do($request->photos(), $request->album(), $request->album());
+	}
+
+	/**
+	 * Rename a photo.
+	 */
+	public function rename(RenamePhotoRequest $request): void
+	{
+		$photo = $request->photo();
+		$photo->title = $request->title();
+		$title_split = TitleSplitter::split($photo->title);
+		$photo->title_base = $title_split->base;
+		$photo->title_index = $title_split->index;
+		$photo->title_date_key = BucketKeys::titleDateKey($photo->title);
+		$photo->save();
+
+		// title/title_base are bucket-relevant columns - recompute every
+		// album this photo is linked into whenever either actually changed.
+		RecomputePhotoBucketsJob::dispatchIf($photo->wasChanged(['title', 'title_base']), $photo->id);
+	}
+
+	/**
+	 * Set the tags of a photo.
+	 */
+	public function tags(SetPhotosTagsRequest $request): void
+	{
+		$tags = $request->tags();
+		$photos = $request->photos();
+		$photo_ids = $photos->pluck('id');
+
+		// Fetch existing tags
+		$existing_tags = Tag::from($tags);
+
+		// Captured before the mutation below - PhotoTagsChanged::$tag_ids
+		// must carry the union of old and new tag IDs (a tag removed by
+		// `shall_override` is otherwise unrecoverable once the delete below
+		// has run), mirroring PhotoPersonsChanged::$person_ids exactly.
+		$old_tag_ids = DB::table('photos_tags')->whereIn('photo_id', $photo_ids)->distinct()->pluck('tag_id')->all();
+
+		DB::transaction(function () use ($request, $existing_tags, $photo_ids): void {
+			if ($request->shall_override) {
+				// Delete existing associations for those photos ids if we override the tags
+				DB::table('photos_tags')
+					->whereIn('photo_id', $photo_ids)
+					->delete();
+			}
+
+			// Associate the existing tags with the photos
+			$existing_tags->each(function (Tag $tag) use ($photo_ids): void {
+				$tag->photos()->syncWithoutDetaching($photo_ids);
+			});
+			DB::commit();
+		});
+		PhotoTagsChanged::dispatch($photo_ids->all(), array_values(array_unique([...$old_tag_ids, ...$existing_tags->pluck('id')->all()])));
+
+		if ($request->configs()->getValueAsBool('embed_metadata_in_files_enabled')) {
+			$photos->each(fn (Photo $photo) => EmbedMetadataJob::dispatch($photo));
+		}
+	}
+
+	/**
+	 * Set the license for multiple photos.
+	 */
+	public function license(SetPhotosLicenseRequest $request): void
+	{
+		$license = $request->license();
+		$photo_ids = collect($request->photoIds());
+		DB::transaction(function () use ($photo_ids, $license): void {
+			// Process photos in chunks of 100 to avoid memory issues
+			$photo_ids->chunk(100)->each(function ($photo_id) use ($license): void {
+				Photo::query()->whereIn('id', $photo_id)->update(['license' => $license->value]);
+			});
+		});
+	}
+
+	/**
+	 * Get the albums containing a photo, filtered by user access.
+	 *
+	 * @param GetPhotoAlbumsRequest $request
+	 *
+	 * @return Collection<int,PhotoAlbumResource>
+	 */
+	public function albums(GetPhotoAlbumsRequest $request): Collection
+	{
+		$photo = $request->photo();
+		/** @var ?User $user */
+		$user = Auth::user();
+		$album_policy = resolve(AlbumPolicy::class);
+
+		return $photo->albums
+			->filter(function ($album) use ($album_policy, $user) {
+				if (!$album instanceof BaseAlbum) {
+					return $album_policy->canAccess($user, $album);
+				}
+
+				// Owner always sees their albums in the list
+				if ($album_policy->isOwner($user, $album)) {
+					return true;
+				}
+
+				// Explicitly shared albums are visible to the shared user
+				if ($album->current_user_permissions() !== null) {
+					return true;
+				}
+
+				// Public albums are only shown if not link-required (hidden from listings)
+				$public_perm = $album->public_permissions();
+
+				return $public_perm !== null &&
+					$public_perm->is_link_required === false &&
+					($public_perm->password === null || $album_policy->isUnlocked($album));
+			})
+			->values()
+			->map(fn ($album) => new PhotoAlbumResource($album));
+	}
+
+	/**
+	 * Watermark all SizeVariants of a single photo.
+	 *
+	 * Dispatches a WatermarkerJob for each SizeVariant where short_path_watermarked is not set.
+	 */
+	public function watermark(WatermarkPhotoRequest $request): void
+	{
+		/** @var int $user_id */
+		$user_id = Auth::id();
+
+		// Get all photos from the request and process their size variants
+		// Filter variants that need watermarking and dispatch jobs
+		SizeVariant::query()
+			->whereIn('photo_id', $request->photoIds())
+			->whereNot('type', SizeVariantType::PLACEHOLDER)
+			->get()
+			->filter(fn (SizeVariant $v) => $this->shouldWatermark($v))
+			->each(fn (SizeVariant $v) => WatermarkerJob::dispatch($v, $user_id));
+	}
+
+	private function shouldWatermark(?SizeVariant $size_variant): bool
+	{
+		if ($size_variant->type === SizeVariantType::ORIGINAL && !request()->configs()->getValueAsBool('watermark_original')) {
+			return false;
+		}
+
+		return !$size_variant->is_watermarked;
+	}
+}

@@ -1,0 +1,579 @@
+<template>
+	<LoadingProgress v-model:loading="isLoading" />
+
+	<!-- Modals Upload, login, Create -->
+	<UploadPanel v-if="albumStore.rights?.can_upload" key="upload_modal" @refresh="refresh" />
+	<CameraCapture v-if="albumStore.rights?.can_upload" key="camera_capture_modal" />
+	<LoginModal v-if="!userStore.isLoggedIn" @logged-in="refresh" />
+	<WebauthnModal v-if="!userStore.isLoggedIn" @logged-in="refresh" />
+	<AlbumCreateDialog v-if="albumStore.rights?.can_upload && albumStore.config?.is_model_album" key="create_album_modal" />
+	<ImportFromLink v-if="albumStore.rights?.can_upload" v-model:open="is_import_from_link_open" @refresh="refresh" />
+	<ImportFromServer v-if="albumStore.rights?.can_import_from_server" v-model:open="is_import_from_server_open" @refresh="refresh" />
+	<DropBox v-if="albumStore.rights?.can_upload" v-model:open="is_import_from_dropbox_open" @refresh="refresh" />
+
+	<!-- Warnings & Locks -->
+	<SensitiveWarning v-if="albumStore.config?.is_nsfw_warning_visible" />
+	<Unlock :open="albumStore.isPasswordProtected" @reload="refresh" @fail="is_login_open = true" />
+
+	<!-- Album panel -->
+	<AlbumPanel
+		v-if="layoutStore.config !== undefined && albumStore.album !== undefined"
+		:key="albumStore.albumId ?? 'not-found'"
+		:is-photo-open="photoStore.isLoaded"
+		@refresh="refresh"
+		@toggle-slide-show="toggleSlideShow"
+		@toggle-edit="toggleEdit"
+		@open-search="openSearch"
+		@go-back="goBack"
+	/>
+
+	<!-- Photo panel -->
+	<PhotoPanel
+		v-if="photoStore.isLoaded"
+		:is-map-visible="albumStore.config?.is_map_accessible ?? false"
+		@toggle-slide-show="slideshow"
+		@rotate-overlay="rotateOverlay"
+		@rotate-photo-c-w="rotatePhotoCW"
+		@rotate-photo-c-c-w="rotatePhotoCCW"
+		@set-album-header="setAlbumHeader"
+		@toggle-highlight="toggleHighlight"
+		@toggle-move="toggleMove"
+		@toggle-delete="toggleDelete"
+		@updated="refresh()"
+		@go-back="goBack"
+		@next="() => next(true)"
+		@previous="() => previous(true)"
+	/>
+	<!-- Dialogs -->
+	<template v-if="photoStore.isLoaded">
+		<PhotoEdit v-if="albumStore.rights?.can_edit" v-model:is-edit-open="is_photo_edit_open" />
+		<MoveDialog v-model:open="is_move_visible" @moved="refresh" />
+		<DeleteDialog v-model:open="is_delete_visible" @deleted="refresh(true)" />
+	</template>
+	<template v-else>
+		<PhotoTagDialog
+			v-model:open="is_tag_visible"
+			:parent-id="albumId"
+			:photo="selectedPhoto"
+			:photo-ids="selectedPhotosIds"
+			@tagged="refreshInPlace"
+		/>
+		<PhotoLicenseDialog
+			v-model:open="is_license_visible"
+			:parent-id="albumId"
+			:photo="selectedPhoto"
+			:photo-ids="selectedPhotosIds"
+			@licensed="refreshInPlace"
+		/>
+		<PhotoCopyDialog v-model:open="is_copy_visible" :photo="selectedPhoto" :photo-ids="selectedPhotosIds" @copy="refreshInPlace" />
+		<MoveDialog
+			v-model:open="is_move_visible"
+			:photo="move_album_override ? undefined : selectedPhoto"
+			:photo-ids="move_album_override ? [] : selectedPhotosIds"
+			:album="move_album_override ?? selectedAlbum"
+			:album-ids="move_album_override ? [move_album_override.id] : selectedAlbumsIds"
+			@moved="
+				() => {
+					unselect();
+					refresh();
+				}
+			"
+		/>
+		<DeleteDialog
+			v-model:open="is_delete_visible"
+			:photo="selectedPhoto"
+			:photo-ids="selectedPhotosIds"
+			:album="selectedAlbum"
+			:album-ids="selectedAlbumsIds"
+			@deleted="
+				() => {
+					unselect();
+					refresh();
+				}
+			"
+		/>
+
+		<!-- Dialogs for albums -->
+		<RenameDialog
+			v-model:open="is_rename_visible"
+			:album="selectedAlbum"
+			:photo="selectedPhoto"
+			@updated="
+				() => {
+					unselect();
+					refresh();
+				}
+			"
+		/>
+		<AlbumMergeDialog
+			v-model:open="is_merge_album_visible"
+			:album="selectedAlbum"
+			:album-ids="selectedAlbumsIds"
+			@merged="
+				() => {
+					unselect();
+					refresh();
+				}
+			"
+		/>
+	</template>
+</template>
+<script setup lang="ts">
+import { useUserStore } from "@/stores/UserState";
+import { ref, watch, onMounted, onUnmounted, computed } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+import { useDebounceFn } from "@vueuse/core";
+import { storeToRefs } from "pinia";
+import { useSelection } from "@/composables/selections/selections";
+import RenameDialog from "@/v8/components/forms/gallery-dialogs/RenameDialog.vue";
+import AlbumMergeDialog from "@/v8/components/forms/gallery-dialogs/AlbumMergeDialog.vue";
+import MoveDialog from "@/v8/components/forms/gallery-dialogs/MoveDialog.vue";
+import DeleteDialog from "@/v8/components/forms/gallery-dialogs/DeleteDialog.vue";
+import { useGalleryModals } from "@/composables/modalsTriggers/galleryModals";
+import PhotoTagDialog from "@/v8/components/forms/photo/PhotoTagDialog.vue";
+import PhotoLicenseDialog from "@/v8/components/forms/photo/PhotoLicenseDialog.vue";
+import PhotoCopyDialog from "@/v8/components/forms/photo/PhotoCopyDialog.vue";
+import SensitiveWarning from "@/v8/components/gallery/albumModule/SensitiveWarning.vue";
+import Unlock from "@/v8/components/forms/album/Unlock.vue";
+import LoginModal from "@/v8/components/modals/LoginModal.vue";
+import { useMouseEvents } from "@/v8/composables/album/uploadEvents";
+import { useTogglablesStateStore } from "@/stores/ModalsState";
+import UploadPanel from "@/v8/components/modals/UploadPanel.vue";
+import CameraCapture from "@/v8/components/modals/CameraCapture.vue";
+import AlbumCreateDialog from "@/v8/components/forms/album/AlbumCreateDialog.vue";
+import { useScrollable } from "@/v8/composables/album/scrollable";
+import WebauthnModal from "@/v8/components/modals/WebauthnModal.vue";
+import LoadingProgress from "@/v8/components/loading/LoadingProgress.vue";
+import AlbumPanel from "@/v8/components/gallery/albumModule/AlbumPanel.vue";
+import PhotoEdit from "@/v8/components/drawers/PhotoEdit.vue";
+import PhotoPanel from "@/v8/components/gallery/photoModule/PhotoPanel.vue";
+import { usePhotoActions } from "@/composables/album/photoActions";
+import { useAppToast } from "@/v8/composables/useAppToast";
+import { useSlideshowFunction } from "@/composables/photo/slideshow";
+import { getNextPreviousPhoto } from "@/composables/photo/getNextPreviousPhoto";
+import MetricsService from "@/services/metrics-service";
+import { usePhotoRoute } from "@/composables/photo/photoRoute";
+import { useAlbumRoute } from "@/composables/photo/albumRoute";
+import { useLtRorRtL } from "@/utils/Helpers";
+import ImportFromLink from "@/v8/components/modals/ImportFromLink.vue";
+import DropBox from "@/v8/components/modals/DropBox.vue";
+import ImportFromServer from "@/v8/components/modals/ImportFromServer.vue";
+import { useOrderManagementStore } from "@/stores/OrderManagement";
+import { useAlbumStore } from "@/stores/AlbumState";
+import { usePhotoStore } from "@/stores/PhotoState";
+import { usePhotoNsfwDetectionsStore } from "@/stores/PhotoNsfwDetectionsState";
+import { usePhotosStore } from "@/stores/PhotosState";
+import { useLayoutStore } from "@/stores/LayoutState";
+import { useAlbumsStore } from "@/stores/AlbumsState";
+import { useAlbumListStore } from "@/stores/AlbumListState";
+import { useCatalogStore } from "@/stores/CatalogState";
+import { useRating } from "@/composables/photo/useRating";
+import { useAdvisoryModal } from "@/composables/modals/useAdvisoryModal";
+import { definePanelShortcuts } from "@/v8/composables/usePanelShortcuts";
+import { useAlbumDateScrubberState } from "@/v8/composables/album/albumDateScrubberState";
+
+const { isLTR } = useLtRorRtL();
+
+const route = useRoute();
+const router = useRouter();
+const toast = useAppToast();
+const { advisoryCheck } = useAdvisoryModal();
+
+const { albumRoutes } = useAlbumRoute(router);
+
+const props = defineProps<{
+	albumId: string;
+	photoId?: string;
+}>();
+
+// unused? Hard to say...
+const videoElement = ref<HTMLVideoElement | null>(null);
+
+// flag to open login modal if necessary
+const userStore = useUserStore();
+const albumStore = useAlbumStore();
+const togglableStore = useTogglablesStateStore();
+const lycheeStore = useLycheeStateStore();
+const orderManagement = useOrderManagementStore();
+const photoStore = usePhotoStore();
+const nsfwDetectionsStore = usePhotoNsfwDetectionsStore();
+const albumsStore = useAlbumsStore();
+const albumListStore = useAlbumListStore();
+const photosStore = usePhotosStore();
+const layoutStore = useLayoutStore();
+const catalogStore = useCatalogStore();
+
+/**
+ * Read the ?page=N query parameter from the current route.
+ * Returns 1 (first page) when the param is absent or invalid.
+ */
+function getStartPage(): number {
+	const p = route.query.page;
+	if (typeof p === "string") {
+		const parsed = parseInt(p, 10);
+		return isNaN(parsed) || parsed < 1 ? 1 : parsed;
+	}
+	return 1;
+}
+
+async function load() {
+	const startPage = getStartPage();
+	await Promise.allSettled([layoutStore.load(), lycheeStore.load(), userStore.load(), albumStore.load(startPage, photoId.value)]);
+	catalogStore.albumId = albumId.value;
+	catalogStore.load();
+	orderManagement.load();
+	photoStore.photoId = photoId.value;
+	photoStore.load();
+}
+
+async function refresh(isDelete: boolean = false) {
+	await Promise.allSettled([layoutStore.load(), lycheeStore.load(), userStore.refresh(), albumStore.refresh()]);
+	albumListStore.invalidate();
+	advisoryCheck();
+	catalogStore.albumId = albumId.value;
+	catalogStore.load();
+	orderManagement.load();
+	if (isDelete) {
+		// If we have deleted a photo, we need to reset the photo store
+		router.push({ name: albumRoutes().album, params: { albumId: albumId.value } });
+		return;
+	}
+	photoStore.photoId = photoId.value;
+	photoStore.load();
+}
+
+// oxlint-disable-next-line vue/no-dupe-keys
+const { albumId, isLoading, current_page } = storeToRefs(albumStore);
+// oxlint-disable-next-line vue/no-dupe-keys
+const { photoId } = storeToRefs(photoStore);
+
+const { are_nsfw_visible, slideshow_timeout, is_slideshow_enabled } = storeToRefs(lycheeStore);
+const {
+	is_photo_edit_open,
+	are_details_open,
+	is_login_open,
+	is_slideshow_active,
+	is_upload_visible,
+	list_upload_files,
+	upload_config,
+	is_create_album_visible,
+	is_album_edit_open,
+	is_import_from_link_open,
+	move_album_override,
+} = storeToRefs(togglableStore);
+
+const { scrollToTop, setScroll } = useScrollable(togglableStore, albumId);
+
+const {
+	is_delete_visible,
+	toggleDelete,
+	is_merge_album_visible,
+	is_move_visible,
+	toggleMove,
+	is_rename_visible,
+	is_tag_visible,
+	is_license_visible,
+	is_copy_visible,
+	is_import_from_dropbox_open,
+	is_import_from_server_open,
+} = useGalleryModals(togglableStore);
+
+// MoveDialog's own Cancel/backdrop/ESC dismissal only flips `is_move_visible` (it never
+// clears `move_album_override` itself), so the override must be cleared here on any close
+// - not just after a successful move - or a later selection-based Move would incorrectly
+// keep targeting the album from a prior, dismissed Spotlight "Move current album" call.
+watch(is_move_visible, (isOpen) => {
+	if (!isOpen) {
+		move_album_override.value = null;
+	}
+});
+
+const { getParentId } = usePhotoRoute(router);
+
+const { toggleHighlight, rotatePhotoCCW, rotatePhotoCW, setAlbumHeader, rotateOverlay } = usePhotoActions(photoStore, albumId, toast, lycheeStore);
+
+const { getNext, getPrevious } = getNextPreviousPhoto(router, photoStore);
+const { slideshow, next, previous, stop } = useSlideshowFunction(1000, is_slideshow_active, slideshow_timeout, videoElement, getNext, getPrevious);
+
+function toggleSlideShow() {
+	if (albumStore.album === undefined || photosStore.photos.length === 0) {
+		return;
+	}
+
+	slideshow();
+	router.push({ name: albumRoutes().album, params: { albumId: albumStore.album.id, photoId: photosStore.photos[0].id } });
+}
+
+const { selectedPhoto, selectedAlbum, selectedPhotosIds, selectedAlbumsIds, selectEverything, unselect, pruneSelection, hasSelection } = useSelection(
+	photosStore,
+	albumsStore,
+	togglableStore,
+);
+
+/**
+ * Refresh after an operation which leaves the photos of this album where they
+ * are: a metadata edit (tags, license) or a copy to another album.
+ *
+ * Only the thumbnails currently loaded are re-fetched, in place: the album panel
+ * is never torn down, so the scroll position, the loaded page window and the
+ * current selection are all preserved.  Operations which do take photos out of
+ * the album (move, delete, …) keep using the full `refresh()` and drop the
+ * selection.
+ */
+function refreshInPlace() {
+	return albumStore.reloadLoadedPhotos().then(() => pruneSelection());
+}
+
+const { handleRatingClick } = useRating(photoStore, toast, userStore);
+
+function goBack() {
+	if (is_slideshow_active.value) {
+		stop();
+	}
+
+	if (is_photo_edit_open.value === true) {
+		is_photo_edit_open.value = false;
+		return;
+	}
+
+	if (photoId.value !== undefined) {
+		photoStore.reset();
+
+		router.push({ name: albumRoutes().album, params: { albumId: albumId.value } });
+		return;
+	}
+
+	is_album_edit_open.value = false;
+
+	// Going up to the parent (rather than drilling into a subalbum) means we're done
+	// with this album for now: forget its scroll position so a later, fresh visit
+	// starts at the top instead of resuming a possibly stale position.
+	if (albumId.value !== undefined) {
+		delete togglableStore.scroll_memory[albumId.value];
+	}
+
+	if (albumStore.modelAlbum !== undefined && albumStore.modelAlbum.parent_id !== null) {
+		router.push({ name: albumRoutes().album, params: { albumId: albumStore.modelAlbum.parent_id } });
+	} else {
+		router.push({ name: albumRoutes().home });
+	}
+}
+
+function toggleDetails() {
+	is_photo_edit_open.value = false;
+	are_details_open.value = !are_details_open.value;
+}
+
+function toggleEdit() {
+	if (photoStore.isLoaded) {
+		are_details_open.value = false;
+		is_photo_edit_open.value = !is_photo_edit_open.value;
+		return;
+	}
+
+	is_album_edit_open.value = !is_album_edit_open.value;
+	if (is_album_edit_open.value) {
+		scrollToTop();
+	}
+}
+
+function openSearch() {
+	if (albumStore.album === undefined) {
+		return;
+	}
+	router.push({ name: "search", params: { albumId: albumStore.album.id } });
+}
+
+// Feature 071 (FR-071-07): keyboard counterpart of the header's date scrubber toggle.
+const { isAvailable: isDateScrubberAvailable, toggleHidden: toggleDateScrubberHidden } = useAlbumDateScrubberState();
+
+definePanelShortcuts({
+	h: () => {
+		if (photoStore.isLoaded && lycheeStore.is_nsfw_classifier_enabled) {
+			lycheeStore.cycleNsfwOverlayMode(nsfwDetectionsStore.get(photoStore.photo?.id ?? "").detections);
+		} else {
+			are_nsfw_visible.value = !are_nsfw_visible.value;
+		}
+	},
+	f: () => togglableStore.toggleFullScreen(),
+	" ": () => (photoStore.isLoaded ? is_slideshow_enabled.value && slideshow() : unselect()),
+	n: () => !photoStore.isLoaded && (is_create_album_visible.value = true),
+	u: () => !photoStore.isLoaded && (is_upload_visible.value = true),
+	i: () => (photoStore.isLoaded ? toggleDetails() : toggleEdit()),
+	l: () => !photoStore.isLoaded && !userStore.isLoggedIn && (is_login_open.value = true),
+	"/": () => !photoStore.isLoaded && albumStore.config?.is_search_accessible && openSearch(),
+	meta_a: () => !photoStore.isLoaded && selectEverything(),
+	arrowleft: () => photoStore.isLoaded && (isLTR() ? photoStore.hasPrevious && previous(true) : photoStore.hasNext && next(true)),
+	arrowright: () => photoStore.isLoaded && (isLTR() ? photoStore.hasNext && next(true) : photoStore.hasPrevious && previous(true)),
+	o: () => photoStore.isLoaded && rotateOverlay(),
+	d: () => !photoStore.isLoaded && isDateScrubberAvailable.value && toggleDateScrubberHidden(),
+	escape: () => {
+		if (photoStore.isLoaded && is_slideshow_active.value) {
+			stop();
+		}
+
+		if (are_details_open.value && lycheeStore.is_photo_details_always_open === false) {
+			are_details_open.value = false;
+			return;
+		}
+
+		if (is_album_edit_open.value) {
+			is_album_edit_open.value = false;
+			return;
+		}
+
+		if (is_move_visible.value) {
+			is_move_visible.value = false;
+			return;
+		}
+
+		if (is_delete_visible.value) {
+			is_delete_visible.value = false;
+			return;
+		}
+
+		if (is_rename_visible.value) {
+			is_rename_visible.value = false;
+			return;
+		}
+
+		if (is_tag_visible.value) {
+			is_tag_visible.value = false;
+			return;
+		}
+
+		if (is_copy_visible.value) {
+			is_copy_visible.value = false;
+			return;
+		}
+
+		goBack();
+	},
+	// privileged album/photo actions
+	m: () =>
+		photoStore.isLoaded
+			? albumStore.rights?.can_move_content && toggleMove()
+			: albumStore.rights?.can_move_content && hasSelection() && toggleMove(),
+	delete: () =>
+		photoStore.isLoaded ? albumStore.rights?.can_delete && toggleDelete() : albumStore.rights?.can_delete && hasSelection() && toggleDelete(),
+	backspace: () =>
+		photoStore.isLoaded ? albumStore.rights?.can_delete && toggleDelete() : albumStore.rights?.can_delete && hasSelection() && toggleDelete(),
+	e: () => photoStore.isLoaded && albumStore.rights?.can_edit && toggleEdit(),
+	s: () => photoStore.isLoaded && (albumsStore.rootRights?.can_highlight || albumStore.rights?.can_edit) && toggleHighlight(),
+	"0": () => photoStore.isLoaded && handleRatingClick(photoStore.photo!.id, 0),
+	"1": () => photoStore.isLoaded && handleRatingClick(photoStore.photo!.id, 1),
+	"2": () => photoStore.isLoaded && handleRatingClick(photoStore.photo!.id, 2),
+	"3": () => photoStore.isLoaded && handleRatingClick(photoStore.photo!.id, 3),
+	"4": () => photoStore.isLoaded && handleRatingClick(photoStore.photo!.id, 4),
+	"5": () => photoStore.isLoaded && handleRatingClick(photoStore.photo!.id, 5),
+});
+
+// We prevent the drag mechanism when a photo is loaded.
+const can_upload = computed(() => (albumStore.rights?.can_upload ?? false) && photoStore.isLoaded === false);
+const album_parent_id = computed(() => albumId.value ?? null);
+const album_existing_albums = computed(() => albumsStore.albums.map((a) => ({ id: a.id, title: a.title })));
+const { onPaste, dragEnd, dropUpload } = useMouseEvents(
+	can_upload,
+	is_upload_visible,
+	list_upload_files,
+	album_parent_id,
+	album_existing_albums,
+	upload_config,
+);
+
+onMounted(() => {
+	// Reset the slideshow.
+	is_slideshow_active.value = false;
+
+	togglableStore.loadUploadConfig();
+	window.addEventListener("paste", onPaste);
+	window.addEventListener("dragover", dragEnd);
+	window.addEventListener("drop", dropUpload);
+});
+
+onMounted(async () => {
+	albumId.value = props.albumId;
+	photoId.value = props.photoId;
+
+	// For direct-access URLs (e.g. /album/xxx/photo/yyy?page=2), remember which
+	// photo to scroll back to so that closing the photo panel restores the
+	// correct thumbnail position.
+	if (photoId.value !== undefined) {
+		togglableStore.rememberScrollThumb(photoId.value);
+	}
+
+	await load();
+
+	// Only restore scroll position when no photo is open.
+	// When a photo IS open, scroll_photo_id must remain set so the route watcher
+	// can use it to scroll the album back to the correct thumbnail once the user
+	// closes the photo. Calling setScroll() here while the photo is visible would
+	// consume (reset) scroll_photo_id prematurely.
+	if (photoId.value === undefined) {
+		setScroll();
+	}
+
+	// if #upload is in the URL, open the upload modal
+	if (window.location.hash === "#upload") {
+		is_upload_visible.value = true;
+	}
+});
+
+onUnmounted(() => {
+	unselect();
+	window.removeEventListener("paste", onPaste);
+	window.removeEventListener("dragover", dragEnd);
+	window.removeEventListener("drop", dropUpload);
+});
+
+const debouncedPhotoMetrics = useDebounceFn(() => {
+	if (photoId.value !== undefined) {
+		MetricsService.photo(photoId.value, getParentId());
+		return;
+	}
+}, 100);
+
+watch(
+	() => [route.params.albumId, route.params.photoId],
+	([newAlbumId, newPhotoId], _) => {
+		unselect();
+
+		photoStore.setTransition(newPhotoId as string | undefined);
+
+		const oldAlbumId = albumId.value;
+		if (newAlbumId !== oldAlbumId) {
+			current_page.value = 1; // Reset the page if we change album
+		}
+		albumId.value = newAlbumId as string;
+		photoId.value = newPhotoId as string;
+		debouncedPhotoMetrics();
+
+		if (photoId.value !== undefined) {
+			togglableStore.rememberScrollThumb(photoId.value);
+		}
+
+		if (oldAlbumId === newAlbumId) {
+			// If we are navigating between photos of the same album, we don't need to reload the album.
+			// We just need to load the new photo.
+			photoStore.load();
+
+			// When going back from a photo to the album (photoId becomes undefined),
+			// scroll the album panel to the previously viewed photo thumbnail.
+			if (photoId.value === undefined) {
+				setScroll();
+			}
+			return;
+		}
+
+		// If we are navigating to a different album, we need to
+		// 1. load the new album
+		// 2. set the scroll position to the photo if we have a photoId, or to the top if we don't have a photoId
+		load().then(() => {
+			if (photoId.value === undefined) {
+				setScroll();
+			}
+		});
+	},
+);
+</script>

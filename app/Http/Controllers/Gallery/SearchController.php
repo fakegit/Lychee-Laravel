@@ -1,0 +1,69 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Http\Controllers\Gallery;
+
+use App\Actions\Search\AlbumSearch;
+use App\Actions\Search\PhotoSearch;
+use App\DTO\PhotoSortingCriterion;
+use App\Enum\ColumnSortingType;
+use App\Enum\OrderSortingType;
+use App\Http\Requests\Search\GetSearchRequest;
+use App\Http\Requests\Search\InitSearchRequest;
+use App\Http\Resources\Search\InitResource;
+use App\Http\Resources\Search\ResultsResource;
+use App\Models\Album;
+use App\Models\Extensions\SortingDecorator;
+use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Gate;
+
+/**
+ * Controller responsible for the config.
+ */
+class SearchController extends Controller
+{
+	/**
+	 * Return init Search.
+	 */
+	public function init(InitSearchRequest $request): InitResource
+	{
+		return new InitResource();
+	}
+
+	/**
+	 * Get the search results given a query.
+	 */
+	public function search(GetSearchRequest $request, AlbumSearch $album_search, PhotoSearch $photo_search): ResultsResource
+	{
+		$tokens = $request->tokens();
+		$album = $request->album();
+
+		// Feature 070: full-resolution access is decided per photo inside
+		// `ResultsResource::fromData()`. It used to be one request-wide boolean
+		// read off the `grants_full_photo_access` config - the seed value for
+		// newly created shares, never an authorization gate - which over-granted.
+		if (!$album instanceof Album) {
+			$album = null;
+		}
+
+		$photo_sorting = $request->photoSortingCriterion() ?? new PhotoSortingCriterion(ColumnSortingType::TAKEN_AT, OrderSortingType::ASC);
+
+		/** @disregard P1013 Undefined method withQueryString() (stupid intelephense) */
+		$photo_results = (new SortingDecorator($photo_search->sqlQuery($tokens, $album)))
+			->orderBy($photo_sorting->column, $photo_sorting->order)
+			->paginate($request->configs()->getValueAsInt('search_result_limit'));
+
+		$album_results = $album_search->queryAlbums($tokens, $album, $request->albumSortingCriterion());
+
+		return ResultsResource::fromData(
+			albums: $album_results,
+			photos: $photo_results,
+			album_id: $album?->id,
+		);
+	}
+}

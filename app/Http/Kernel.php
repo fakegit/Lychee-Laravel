@@ -1,5 +1,11 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\Http;
 
 use Illuminate\Foundation\Http\Kernel as HttpKernel;
@@ -9,15 +15,14 @@ class Kernel extends HttpKernel
 	/**
 	 * The application's global HTTP middleware stack.
 	 *
-	 * These middleware are run during every request to your application.
+	 * These middlewares are run during every request to your application.
 	 *
-	 * @var array
+	 * @var array<int,string>
 	 */
 	protected $middleware = [
-		// \App\Http\Middleware\TrustHosts::class,
-		\App\Http\Middleware\TrustProxies::class,
-		// \Fruitcake\Cors\HandleCors::class,
-		\App\Http\Middleware\PreventRequestsDuringMaintenance::class,
+		\App\Http\Middleware\FixStatusCode::class,
+		\Illuminate\Http\Middleware\TrustProxies::class,
+		\Illuminate\Foundation\Http\Middleware\PreventRequestsDuringMaintenance::class,
 		\Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
 		\App\Http\Middleware\TrimStrings::class,
 		\Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
@@ -25,65 +30,128 @@ class Kernel extends HttpKernel
 	];
 
 	/**
+	 * The priority-sorted list of middleware.
+	 *
+	 * Laravel's default list, plus {@see Middleware\ReadOnlyStartSession}
+	 * right after `StartSession`, so it always runs before `AuthenticateSession`.
+	 *
+	 * The config, verification and locale middleware come first, as the
+	 * groups list them (ADR-102-02).
+	 *
+	 * @var array<int,string>
+	 */
+	protected $middlewarePriority = [
+		Middleware\ResolveConfigs::class,
+		Middleware\ResolveVerify::class,
+		Middleware\SetLocale::class,
+		\Illuminate\Foundation\Http\Middleware\HandlePrecognitiveRequests::class,
+		\Illuminate\Cookie\Middleware\EncryptCookies::class,
+		\Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+		\Illuminate\Session\Middleware\StartSession::class,
+		Middleware\ReadOnlyStartSession::class,
+		\Illuminate\View\Middleware\ShareErrorsFromSession::class,
+		\Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class,
+		\Illuminate\Routing\Middleware\ThrottleRequests::class,
+		\Illuminate\Routing\Middleware\ThrottleRequestsWithRedis::class,
+		\Illuminate\Contracts\Session\Middleware\AuthenticatesSessions::class,
+		\Illuminate\Routing\Middleware\SubstituteBindings::class,
+		\Illuminate\Auth\Middleware\Authorize::class,
+	];
+
+	/**
 	 * The application's route middleware groups.
 	 *
-	 * @var array
+	 * @var array<string,array<int,string>>
 	 */
 	protected $middlewareGroups = [
 		'web' => [
-			\App\Http\Middleware\EncryptCookies::class,
+			\App\Http\Middleware\ResolveConfigs::class,
+			\App\Http\Middleware\ResolveVerify::class,
+			\App\Http\Middleware\SetLocale::class,
+			'installation:complete',
+			'admin_user:set',
+			'accept_content_type:html',
+			\Illuminate\Cookie\Middleware\EncryptCookies::class,
 			\Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
 			\Illuminate\Session\Middleware\StartSession::class,
 			\Illuminate\Session\Middleware\AuthenticateSession::class,
 			\Illuminate\View\Middleware\ShareErrorsFromSession::class,
 			\App\Http\Middleware\VerifyCsrfToken::class,
 			\Illuminate\Routing\Middleware\SubstituteBindings::class,
+			\App\Http\Middleware\DisableCSP::class,
 		],
 
 		'web-admin' => [
-			\App\Http\Middleware\EncryptCookies::class,
+			\App\Http\Middleware\ResolveConfigs::class,
+			\App\Http\Middleware\ResolveVerify::class,
+			\App\Http\Middleware\SetLocale::class,
+			'accept_content_type:html',
+			\Illuminate\Cookie\Middleware\EncryptCookies::class,
 			\Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
 			\Illuminate\Session\Middleware\StartSession::class,
 			\Illuminate\Session\Middleware\AuthenticateSession::class,
 			\Illuminate\View\Middleware\ShareErrorsFromSession::class,
 			\App\Http\Middleware\VerifyCsrfToken::class,
 			\Illuminate\Routing\Middleware\SubstituteBindings::class,
-			'admin',
+			\App\Http\Middleware\DisableCSP::class,
 		],
 
-		'install' => [
-			\App\Http\Middleware\InstalledCheck::class,
+		'embed' => [
+			\App\Http\Middleware\ResolveConfigs::class,
+			\App\Http\Middleware\ResolveVerify::class,
+			\App\Http\Middleware\SetLocale::class,
+			\Illuminate\Http\Middleware\HandleCors::class,
+		],
+
+		'web-install' => [
+			\App\Http\Middleware\ResolveConfigs::class,
+			'accept_content_type:html',
+			'installation:incomplete',
 		],
 
 		'api' => [
-			'throttle:api',
+			\App\Http\Middleware\ResolveConfigs::class,
+			\App\Http\Middleware\ResolveVerify::class,
+			\App\Http\Middleware\SetLocale::class,
+			'accept_content_type:json',
+			'content_type:json',
+			\Illuminate\Cookie\Middleware\EncryptCookies::class,
+			\Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+			\Illuminate\Session\Middleware\StartSession::class,
+			\Illuminate\Session\Middleware\AuthenticateSession::class,
+			\Illuminate\View\Middleware\ShareErrorsFromSession::class,
+			\App\Http\Middleware\VerifyCsrfToken::class,
+			'gallery_password',
 			\Illuminate\Routing\Middleware\SubstituteBindings::class,
+			\App\Http\Middleware\Latency::class,
+			\App\Http\Middleware\ResolveAlbumSlug::class,
 		],
 	];
 
 	/**
 	 * The application's route middleware.
 	 *
-	 * These middleware may be assigned to groups or used individually.
+	 * These middlewares may be assigned to groups or used individually.
 	 *
-	 * @var array
+	 * @var array<string, string>
 	 */
-	protected $routeMiddleware = [
-		// 'auth' => \Illuminate\Auth\Middleware\Authenticate::class,
-		// 'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
-		'cache.headers' => \Illuminate\Http\Middleware\SetCacheHeaders::class,
-		'can' => \Illuminate\Auth\Middleware\Authorize::class,
-		// 'guest' => \App\Http\Middleware\RedirectIfAuthenticated::class,
-		// 'password.confirm' => \Illuminate\Auth\Middleware\RequirePassword::class,
-		'signed' => \Illuminate\Routing\Middleware\ValidateSignature::class,
+	protected $middlewareAliases = [
+		'installation' => \App\Http\Middleware\InstallationStatus::class,
+		'admin_user' => \App\Http\Middleware\AdminUserStatus::class,
+		'migration' => \App\Http\Middleware\MigrationStatus::class,
+		'content_type' => \App\Http\Middleware\ContentType::class,
+		'accept_content_type' => \App\Http\Middleware\AcceptContentType::class,
+		'json_errors' => \App\Http\Middleware\EnsureJsonErrorResponses::class,
 		'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
-		// 'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
-
-		'login' => \App\Http\Middleware\LoginCheck::class,
-		'read' => \App\Http\Middleware\ReadCheck::class,
-		'admin' => \App\Http\Middleware\AdminCheck::class,
-		'upload' => \App\Http\Middleware\UploadCheck::class,
-		'installed' => \App\Http\Middleware\DBExists::class,
-		'migrated' => \App\Http\Middleware\MigrationCheck::class,
+		'login_required' => \App\Http\Middleware\LoginRequired::class,
+		'gallery_password' => \App\Http\Middleware\GalleryPasswordRequired::class,
+		'cache_control' => \App\Http\Middleware\CacheControl::class,
+		'support' => \LycheeVerify\Http\Middleware\VerifySupporterStatus::class,
+		'config_integrity' => \App\Http\Middleware\ConfigIntegrity::class,
+		'unlock_with_password' => \App\Http\Middleware\UnlockWithPassword::class,
+		'resolve_album_slug' => \App\Http\Middleware\ResolveAlbumSlug::class,
+		'legacy_id_redirect' => \App\Http\Middleware\LegacyLocalIdRedirect::class,
+		'feature' => \App\Http\Middleware\FeatureEnabled::class,
+		'rss_feed_meta' => \App\Http\Middleware\SetRssFeedMeta::class,
 	];
 }

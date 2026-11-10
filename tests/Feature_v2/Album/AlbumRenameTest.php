@@ -1,0 +1,90 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+/**
+ * We don't care for unhandled exceptions in tests.
+ * It is the nature of a test to throw an exception.
+ * Without this suppression we had 100+ Linter warning in this file which
+ * don't help anything.
+ *
+ * @noinspection PhpDocMissingThrowsInspection
+ * @noinspection PhpUnhandledExceptionInspection
+ */
+
+namespace Tests\Feature_v2\Album;
+
+use App\Events\AlbumSaved;
+use App\Events\TagAlbumSaved;
+use Illuminate\Support\Facades\Event;
+use Tests\Feature_v2\Base\BaseApiWithDataTest;
+
+class AlbumRenameTest extends BaseApiWithDataTest
+{
+	public function testRenameAlbumDispatchesAlbumSavedEvent(): void
+	{
+		Event::fake([AlbumSaved::class]);
+
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Album::rename', [
+			'album_id' => $this->album1->id,
+			'title' => 'new title',
+		]);
+		$this->assertNoContent($response);
+
+		Event::assertDispatched(AlbumSaved::class, fn (AlbumSaved $e) => in_array($this->album1->id, $e->album_ids));
+	}
+
+	public function testRenameTagAlbumDispatchesTagAlbumSavedEventNotAlbumSaved(): void
+	{
+		Event::fake([AlbumSaved::class, TagAlbumSaved::class]);
+
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Album::rename', [
+			'album_id' => $this->tagAlbum1->id,
+			'title' => 'new tag album title',
+		]);
+		$this->assertNoContent($response);
+
+		Event::assertDispatched(TagAlbumSaved::class, fn (TagAlbumSaved $e) => $e->tag_album_ids === [$this->tagAlbum1->id]);
+		Event::assertNotDispatched(AlbumSaved::class);
+	}
+
+	public function testRenameAlbumUnauthorizedForbidden(): void
+	{
+		$response = $this->patchJson('Album::rename', []);
+		$this->assertUnprocessable($response);
+
+		$response = $this->patchJson('Album::rename', [
+			'album_id' => $this->album1->id,
+			'title' => 'new title',
+		]);
+		$this->assertUnauthorized($response);
+
+		$response = $this->actingAs($this->userNoUpload)->patchJson('Album::rename', [
+			'album_id' => $this->album1->id,
+			'title' => 'new title',
+		]);
+		$this->assertForbidden($response);
+	}
+
+	public function testRenameAlbumAuthorizedOwner(): void
+	{
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Album::rename', [
+			'album_id' => $this->album1->id,
+			'title' => 'new title',
+		]);
+		$this->assertNoContent($response);
+		$response = $this->getJsonWithData('Album::head', ['album_id' => $this->album1->id]);
+		$this->assertOk($response);
+		$response->assertJson([
+			'config' => [],
+			'resource' => [
+				'id' => $this->album1->id,
+				'title' => 'new title',
+			],
+		]);
+	}
+}

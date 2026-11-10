@@ -1,0 +1,192 @@
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+import { computed, type ComputedRef } from "vue";
+import { storeToRefs } from "pinia";
+import { type GlobalRightsStore } from "@/stores/GlobalRightsState";
+import { type LycheeStateStore } from "@/stores/LycheeState";
+
+export type AdminTileGroup = "core" | "monitoring" | "extensions";
+
+export type AdminTile = {
+	key: string;
+	group: AdminTileGroup;
+	label: string;
+	icon: string;
+	to: string;
+	isExternal: boolean;
+	visible: ComputedRef<boolean>;
+	num?: ComputedRef<number>;
+};
+
+export function useAdminTiles(lycheeStore: LycheeStateStore, globalRightsStore: GlobalRightsStore): AdminTile[] {
+	const { clockwork_url, is_face_recognition_enabled } = storeToRefs(lycheeStore);
+	const { rights } = storeToRefs(globalRightsStore);
+
+	return [
+		{
+			key: "settings",
+			group: "core",
+			label: "settings.title",
+			icon: "cog",
+			to: "/admin/settings",
+			isExternal: false,
+			visible: computed(() => rights.value?.settings.can_edit ?? false),
+		},
+		{
+			key: "diagnostics",
+			group: "monitoring",
+			label: "diagnostics.title",
+			icon: "wrench",
+			to: "/diagnostics",
+			isExternal: false,
+			visible: computed(() => rights.value?.settings.can_see_diagnostics ?? false),
+		},
+		{
+			key: "users",
+			group: "core",
+			label: "users.title",
+			icon: "pi pi-user",
+			to: "/admin/users",
+			isExternal: false,
+			visible: computed(() => rights.value?.user_management.can_edit ?? false),
+		},
+		{
+			key: "user-groups",
+			group: "core",
+			label: "user-groups.title",
+			icon: "pi pi-users",
+			to: "/admin/user-groups",
+			isExternal: false,
+			visible: computed(() => rights.value?.settings.can_acess_user_groups ?? false),
+		},
+		{
+			key: "purchasables",
+			group: "extensions",
+			label: "Purchasables",
+			icon: "pi pi-shopping-bag",
+			to: "/admin/purchasables",
+			isExternal: false,
+			visible: computed(() => (rights.value?.modules.is_mod_webshop_enabled ?? false) && (rights.value?.settings.can_edit ?? false)),
+		},
+		{
+			key: "shop-sizes",
+			group: "extensions",
+			label: "left-menu.shopSizes",
+			icon: "pi pi-expand",
+			to: "/admin/shop/sizes",
+			isExternal: false,
+			visible: computed(() => (rights.value?.modules.is_mod_webshop_enabled ?? false) && (rights.value?.settings.can_edit ?? false)),
+		},
+		{
+			key: "contact-messages",
+			group: "extensions",
+			label: "left-menu.messages",
+			icon: "pi pi-inbox",
+			to: "/admin/contact-messages",
+			isExternal: false,
+			num: computed(() => rights.value?.modules.messages_count ?? 0),
+			visible: computed(
+				() =>
+					(rights.value?.modules.is_contact_enabled ?? false) &&
+					((rights.value?.settings.can_edit ?? false) ||
+						(rights.value?.user_management.can_edit ?? false) ||
+						(rights.value?.settings.can_see_diagnostics ?? false) ||
+						(rights.value?.settings.can_see_logs ?? false) ||
+						(rights.value?.settings.can_acess_user_groups ?? false)),
+			),
+		},
+		{
+			key: "webhooks",
+			group: "extensions",
+			label: "left-menu.webhooks",
+			icon: "pi pi-send",
+			to: "/admin/webhooks",
+			isExternal: false,
+			visible: computed(() => rights.value?.modules.is_mod_webhook_enabled ?? false),
+		},
+		{
+			key: "faces",
+			group: "extensions",
+			label: "maintenance.face_quality.title",
+			icon: "pi pi-face-smile",
+			to: "/admin/maintenance/faces",
+			isExternal: false,
+			visible: computed(() => (rights.value?.settings.can_edit ?? false) && (is_face_recognition_enabled.value ?? false)),
+		},
+		{
+			key: "nsfw-config",
+			group: "extensions",
+			label: "admin-dashboard.nsfw_config.title",
+			icon: "pi pi-eye",
+			to: "/admin/nsfw-config",
+			isExternal: false,
+			visible: computed(() => (rights.value?.settings.can_edit ?? false) && (rights.value?.modules.is_nsfw_classifier_enabled ?? false)),
+		},
+		{
+			key: "bulk-album-edit",
+			group: "core",
+			label: "bulk_album_edit.title",
+			icon: "pi pi-folder",
+			to: "/bulk-album-edit",
+			isExternal: false,
+			visible: computed(() => rights.value?.settings.can_edit ?? false),
+		},
+		{
+			key: "moderation",
+			group: "core",
+			label: "moderation.title",
+			icon: "pi pi-shield",
+			to: "/admin/moderation",
+			isExternal: false,
+			visible: computed(
+				() =>
+					(rights.value?.settings.can_edit ?? false) ||
+					(rights.value?.user_management.can_edit ?? false) ||
+					(rights.value?.settings.can_see_diagnostics ?? false) ||
+					(rights.value?.settings.can_see_logs ?? false) ||
+					(rights.value?.settings.can_acess_user_groups ?? false),
+			),
+		},
+		{
+			key: "maintenance",
+			group: "core",
+			label: "maintenance.title",
+			icon: "timer",
+			to: "/admin/maintenance",
+			isExternal: false,
+			visible: computed(() => rights.value?.settings.can_edit ?? false),
+		},
+		{
+			key: "jobs",
+			group: "monitoring",
+			label: "left-menu.jobs",
+			icon: "project",
+			to: "/admin/jobs",
+			isExternal: false,
+			visible: computed(() => rights.value?.settings.can_see_logs ?? false),
+		},
+
+		{
+			key: "logs",
+			group: "monitoring",
+			label: "left-menu.logs",
+			icon: "excerpt",
+			to: "/Logs",
+			isExternal: true,
+			visible: computed(() => rights.value?.settings.can_see_logs ?? false),
+		},
+		{
+			key: "clockwork",
+			group: "monitoring",
+			label: "left-menu.clockwork",
+			icon: "telescope",
+			to: clockwork_url.value ?? "",
+			isExternal: true,
+			visible: computed(() => clockwork_url.value !== null && (rights.value?.settings.can_access_dev_tools ?? false)),
+		},
+	];
+}

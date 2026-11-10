@@ -13,6 +13,47 @@ return [
 	|
 	*/
 
+	/*
+	 |--------------------------------------------------------------------------
+	 | Reverse Geocoding service integration.
+	 |--------------------------------------------------------------------------
+	 */
+	'local-geo-decoding' => [
+		'base_url' => env('LOCAL_GEO_DECODING_URL', ''),
+	],
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | Facial recognition service integration.
+	 |--------------------------------------------------------------------------
+	 |
+	 | Infrastructure keys for the external Facial recognition service.
+	 | These are NOT stored in the configs table to avoid exposing the service URL
+	 | or shared API key through the admin settings UI.
+	 */
+	'face_recognition' => [
+		'base_url' => env('AI_VISION_FACE_URL', ''),
+		'api_key' => env('AI_VISION_FACE_API_KEY', ''),
+		'rescan_iou_threshold' => (float) env('AI_VISION_FACE_RESCAN_IOU_THRESHOLD', 0.3),
+		'stuck_scan_threshold-minutes' => (int) env('AI_VISION_FACE_STUCK_SCAN_THRESHOLD_MINUTES', 720),
+		'nsfw-url' => env('AI_VISION_NSFW_URL', ''),
+		'nsfw-api-key' => env('AI_VISION_NSFW_API_KEY', ''),
+	],
+
+	/*
+	 |--------------------------------------------------------------------------
+	 | NSFW detection service integration.
+	 |--------------------------------------------------------------------------
+	 |
+	 | Infrastructure keys for the external NSFW detection service.
+	 | These are NOT stored in the configs table to avoid exposing the service URL
+	 | or shared API key through the admin settings UI.
+	 */
+	'nsfw_detection' => [
+		'base_url' => env('AI_VISION_NSFW_URL', ''),
+		'api_key' => env('AI_VISION_NSFW_API_KEY', ''),
+	],
+
 	'mailgun' => [
 		'domain' => env('MAILGUN_DOMAIN'),
 		'secret' => env('MAILGUN_SECRET'),
@@ -27,5 +68,106 @@ return [
 		'key' => env('AWS_ACCESS_KEY_ID'),
 		'secret' => env('AWS_SECRET_ACCESS_KEY'),
 		'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+	],
+
+	/*
+	|--------------------------------------------------------------------------
+	| Oauth services
+	|--------------------------------------------------------------------------
+	*/
+	'amazon' => [
+		'client_id' => env('AMAZON_SIGNIN_CLIENT_ID'),
+		'client_secret' => env('AMAZON_SIGNIN_SECRET'),
+		'redirect' => env('AMAZON_SIGNIN_REDIRECT_URI', '/auth/amazon/redirect'),
+	],
+
+	// https://developer.okta.com/blog/2019/06/04/what-the-heck-is-sign-in-with-apple
+	// Note: the client secret used for "Sign In with Apple" is a JWT token that can have a maximum lifetime of 6 months.
+	// The article above explains how to generate the client secret on demand and you'll need to update this every 6 months.
+	// To generate the client secret for each request, see Generating A Client Secret For Sign In With Apple On Each Request.
+	// https://bannister.me/blog/generating-a-client-secret-for-sign-in-with-apple-on-each-request
+	'apple' => [
+		'client_id' => env('APPLE_CLIENT_ID'),
+		'client_secret' => env('APPLE_CLIENT_SECRET'),
+		'redirect' => env('APPLE_REDIRECT_URI', '/auth/apple/redirect'),
+	],
+
+	'authelia' => [
+		'client_id' => env('AUTHELIA_CLIENT_ID'),
+		'client_secret' => env('AUTHELIA_CLIENT_SECRET'),
+		'redirect' => env('AUTHELIA_REDIRECT_URI'),
+		'base_url' => env('AUTHELIA_BASE_URL'),
+	],
+
+	'authentik' => [
+		'client_id' => env('AUTHENTIK_CLIENT_ID'),
+		'client_secret' => env('AUTHENTIK_CLIENT_SECRET'),
+		'redirect' => env('AUTHENTIK_REDIRECT_URI'),
+		'base_url' => env('AUTHENTIK_BASE_URL'),
+	],
+
+	'facebook' => [
+		'client_id' => env('FACEBOOK_CLIENT_ID'),
+		'client_secret' => env('FACEBOOK_CLIENT_SECRET'),
+		'redirect' => env('FACEBOOK_REDIRECT_URI', '/auth/facebook/redirect'),
+	],
+
+	'github' => [
+		'client_id' => env('GITHUB_CLIENT_ID'),
+		'client_secret' => env('GITHUB_CLIENT_SECRET'),
+		'redirect' => env('GITHUB_REDIRECT_URI', '/auth/github/redirect'),
+	],
+
+	'google' => [
+		'client_id' => env('GOOGLE_CLIENT_ID'),
+		'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+		'redirect' => env('GOOGLE_REDIRECT_URI', '/auth/google/redirect'),
+	],
+
+	'kanidm' => [
+		'client_id' => env('KANIDM_CLIENT_ID'),
+		'client_secret' => env('KANIDM_CLIENT_SECRET'),
+		'redirect' => env('KANIDM_REDIRECT_URI'),
+		'base_url' => env('KANIDM_BASE_URL'),
+		'enable_pkce' => env('KANIDM_ENABLE_PKCE', true),
+	],
+
+	'mastodon' => [
+		'domain' => env('MASTODON_DOMAIN'),
+		'client_id' => env('MASTODON_ID'),
+		'client_secret' => env('MASTODON_SECRET'),
+		'redirect' => env('MASTODON_REDIRECT_URI', '/auth/mastodon/redirect'),
+		// 'read', 'write', 'follow'
+		'scope' => ['read'],
+	],
+
+	'microsoft' => [
+		'client_id' => env('MICROSOFT_CLIENT_ID'),
+		'client_secret' => env('MICROSOFT_CLIENT_SECRET'),
+		'redirect' => env('MICROSOFT_REDIRECT_URI', '/auth/microsoft/redirect'),
+		'tenant' => env('MICROSOFT_TENANT_ID', 'common'),
+	],
+
+	'nextcloud' => [
+		'client_id' => env('NEXTCLOUD_CLIENT_ID'),
+		'client_secret' => env('NEXTCLOUD_CLIENT_SECRET'),
+		'redirect' => env('NEXTCLOUD_REDIRECT_URI', '/auth/nextcloud/redirect'),
+		'instance_uri' => env('NEXTCLOUD_BASE_URI'),
+	],
+
+	'pocketid' => [
+		'client_id' => env('POCKETID_CLIENT_ID'),
+		'client_secret' => env('POCKETID_CLIENT_SECRET'),
+		'redirect' => env('POCKETID_REDIRECT_URI', '/auth/pocketid/redirect'),
+		'base_url' => env('POCKETID_BASE_URL'),
+		'use_pkce' => env('POCKETID_USE_PKCE', true),
+	],
+
+	'keycloak' => [
+		'client_id' => env('KEYCLOAK_CLIENT_ID'),
+		'client_secret' => env('KEYCLOAK_CLIENT_SECRET'),
+		'redirect' => env('KEYCLOAK_REDIRECT_URI'),
+		'base_url' => env('KEYCLOAK_BASE_URL'),
+		'realms' => env('KEYCLOAK_REALM'),
 	],
 ];

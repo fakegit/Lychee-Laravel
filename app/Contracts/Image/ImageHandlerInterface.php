@@ -1,0 +1,134 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Contracts\Image;
+
+use App\DTO\ImageDimension;
+use App\Exceptions\ImageProcessingException;
+use App\Exceptions\Internal\LycheeDomainException;
+use App\Exceptions\MediaFileOperationException;
+use App\Exceptions\MediaFileUnsupportedException;
+
+/**
+ * Interface ImageHandlerInterface.
+ */
+interface ImageHandlerInterface
+{
+	/**
+	 * Loads an image from the provided file.
+	 *
+	 * @param MediaFile $file the file to read from
+	 *
+	 * @return void
+	 *
+	 * @throws MediaFileUnsupportedException
+	 * @throws MediaFileOperationException
+	 * @throws ImageProcessingException
+	 */
+	public function load(MediaFile $file): void;
+
+	/**
+	 * Save the image into the provided file.
+	 *
+	 * @param MediaFile $file               the file to write into
+	 * @param bool      $collect_statistics if true, the method returns statistics about the stream
+	 *
+	 * @return StreamStats|null optional statistics about the stream, if requested
+	 *
+	 * @throws MediaFileOperationException
+	 */
+	public function save(MediaFile $file, bool $collect_statistics = false): ?StreamStats;
+
+	/**
+	 * Frees all internal resources.
+	 *
+	 * This method resets the object into a state where no image is loaded.
+	 * It frees all internal resources, releases all temporary buffers and
+	 * closes all streams.
+	 * Any work which has not been saved by a prior call to
+	 * {@link ImageHandlerInterface::save()} will be lost.
+	 *
+	 * @return void
+	 */
+	public function reset(): void;
+
+	/**
+	 * Clones and scales the image proportionally to the designated dimensions such
+	 * that the new dimension don't exceed the designated dimensions.
+	 *
+	 * The resulting dimension may differ from the requested dimension due
+	 * to proportional scaling.
+	 *
+	 * Either the new width or height may be zero which means that this
+	 * dimension is chosen automatically.
+	 *
+	 * @param ImageDimension $dst_dim the designated dimensions
+	 *
+	 * @return ImageHandlerInterface the scaled clone
+	 *
+	 * @throws ImageProcessingException
+	 * @throws LycheeDomainException
+	 */
+	public function cloneAndScale(ImageDimension $dst_dim): ImageHandlerInterface;
+
+	/**
+	 * Clones and changes the opacity multiplicatively.
+	 *
+	 * @param float $opacity multiplicative factor on opacity, float between 0 and 1 (1=no change, 0=fully transparent)
+	 *
+	 * @return ImageHandlerInterface the changed clone
+	 *
+	 * @throws LycheeDomainException    if $opacity is out of bounds
+	 * @throws ImageProcessingException on processing failure
+	 */
+	public function cloneAndChangeOpacity(float $opacity): ImageHandlerInterface;
+
+	/**
+	 * Clones and crops the image to the designated dimensions.
+	 *
+	 * @param ImageDimension $dst_dim the designated dimensions
+	 *
+	 * @return ImageHandlerInterface the cropped clone
+	 *
+	 * @throws ImageProcessingException
+	 */
+	public function cloneAndCrop(ImageDimension $dst_dim): ImageHandlerInterface;
+
+	/**
+	 * Rotates the imaged based on the given angle.
+	 *
+	 * @param int $angle
+	 *
+	 * @return ImageDimension the resulting dimension
+	 *
+	 * @throws ImageProcessingException
+	 * @throws LycheeDomainException    thrown if `$angle` is out-of-bounds
+	 */
+	public function rotate(int $angle): ImageDimension;
+
+	/**
+	 * Returns the dimension of the image in upright orientation.
+	 *
+	 * The returned dimension may be swapped compared to the dimensions
+	 * returned by raw EXIF data.
+	 * An image may be stored rotated or mirrored and EXIF returns the raw
+	 * width and height.
+	 * This method returns the dimension after the photo has been put into
+	 * upright orientation.
+	 *
+	 * @return ImageDimension the dimensions of the image
+	 *
+	 * @throws ImageProcessingException
+	 */
+	public function getDimensions(): ImageDimension;
+
+	/**
+	 * @return bool true, if an image is loaded
+	 */
+	public function isLoaded(): bool;
+}

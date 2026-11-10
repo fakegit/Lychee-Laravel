@@ -1,0 +1,406 @@
+<template>
+	<UModal v-model:open="visible" :dismissible="true" :ui="{ content: 'max-w-2xl' }">
+		<template #header>
+			<span class="font-bold">{{ $t("bulk_album_edit.section_metadata") }}</span>
+		</template>
+		<template #body>
+			<div class="overflow-y-auto max-h-[75vh]">
+				<p class="mb-4 text-muted text-sm">{{ $t("bulk_album_edit.edit_fields_description") }}</p>
+
+				<div class="grid grid-cols-1 gap-3">
+					<p class="font-semibold text-sm">{{ $t("bulk_album_edit.section_metadata") }}</p>
+
+					<div v-for="field in textFields" :key="field.key" class="flex items-start gap-3">
+						<UCheckbox v-model="editEnabled[field.key]" class="mt-2 shrink-0" />
+						<UFormField :label="$t('bulk_album_edit.' + field.label)" class="flex-1">
+							<UInput
+								:model-value="editTextValues[field.key] ?? undefined"
+								class="w-full"
+								size="sm"
+								@update:model-value="(v: string | undefined) => onTextChange(field.key, v ?? null)"
+							/>
+						</UFormField>
+					</div>
+
+					<div v-for="field in enumFields" :key="field.key" class="flex items-start gap-3">
+						<UCheckbox v-model="editEnabled[field.key]" class="mt-2 shrink-0" />
+						<UFormField :label="$t('bulk_album_edit.' + field.label)" class="flex-1">
+							<USelectMenu
+								:model-value="optionFor(field.options, editEnumValues[field.key])"
+								:items="field.options"
+								label-key="label"
+								class="w-full"
+								size="sm"
+								@update:model-value="(v: SelectOption<string | null> | undefined) => onEnumChange(field.key, v?.value ?? null)"
+							>
+								<template #default="{ modelValue }">{{ selectedLabel(modelValue) }}</template>
+								<template #item-label="{ item }">{{ $t(item.label) }}</template>
+							</USelectMenu>
+						</UFormField>
+					</div>
+
+					<template v-for="pair in sortingPairs" :key="pair.col.key">
+						<div class="flex items-start gap-2">
+							<UCheckbox v-model="editEnabled[pair.col.key]" class="mt-2 shrink-0" />
+							<UFormField :label="$t('bulk_album_edit.' + pair.col.label)" class="flex-1">
+								<USelectMenu
+									:model-value="optionFor(pair.col.options, editEnumValues[pair.col.key])"
+									:items="pair.col.options"
+									label-key="label"
+									class="w-full"
+									size="sm"
+									@update:model-value="(v: SelectOption<string | null> | undefined) => onEnumChange(pair.col.key, v?.value ?? null)"
+								>
+									<template #default="{ modelValue }">{{ selectedLabel(modelValue) }}</template>
+									<template #item-label="{ item }">{{ $t(item.label) }}</template>
+								</USelectMenu>
+							</UFormField>
+							<UCheckbox
+								:model-value="isOrderLocked(pair) || editEnabled[pair.order.key] === true"
+								:disabled="isOrderLocked(pair)"
+								class="mt-2 shrink-0"
+								@update:model-value="(v: boolean | 'indeterminate') => (editEnabled[pair.order.key] = v === true)"
+							/>
+							<UFormField :label="$t('bulk_album_edit.' + pair.order.label)" class="flex-1">
+								<USelectMenu
+									:model-value="optionFor(sortingOrderLookup, sentOrder(pair))"
+									:items="pair.order.options"
+									label-key="label"
+									:disabled="isOrderLocked(pair) && editEnumValues[pair.col.key] === null"
+									class="w-full"
+									size="sm"
+									@update:model-value="
+										(v: SelectOption<string | null> | undefined) => onEnumChange(pair.order.key, v?.value ?? null)
+									"
+								>
+									<template #default="{ modelValue }">{{ selectedLabel(modelValue) }}</template>
+									<template #item-label="{ item }">{{ $t(item.label) }}</template>
+								</USelectMenu>
+							</UFormField>
+						</div>
+					</template>
+
+					<template v-if="is_flow_opt_in_strategy">
+						<div v-for="field in dateFields" :key="field.key" class="flex items-start gap-3">
+							<UCheckbox v-model="editEnabled[field.key]" class="mt-2 shrink-0" />
+							<UFormField :label="$t('bulk_album_edit.' + field.label)" class="flex-1">
+								<div class="flex items-center gap-2">
+									<input
+										:id="field.key"
+										:value="editDateValues[field.key] ?? ''"
+										type="datetime-local"
+										step="1"
+										class="border-0 p-0 border-b hover:border-b-primary-400 focus:border-b-primary-400 bg-transparent"
+										@input="(e: Event) => onDateChange(field.key, (e.target as HTMLInputElement).value || null)"
+									/>
+									<USelectMenu
+										:model-value="optionFor(timeZoneOptions, editDateTzValues[field.key])"
+										:items="timeZoneOptions"
+										label-key="label"
+										size="sm"
+										@update:model-value="(v: SelectOption<string> | undefined) => onDateTzChange(field.key, v?.value ?? null)"
+									>
+										<template #item-label="{ item }">{{ item.label }}</template>
+									</USelectMenu>
+								</div>
+							</UFormField>
+						</div>
+					</template>
+
+					<p class="font-semibold text-sm mt-2">{{ $t("bulk_album_edit.section_visibility") }}</p>
+
+					<div class="grid grid-cols-2 gap-3 text-sm">
+						<div v-for="field in visibleBoolFields" :key="field.key" class="flex items-center gap-2">
+							<UCheckbox
+								v-model="editEnabled[field.key]"
+								class="flex-1"
+								:disabled="field.seOnly === true && !is_se_enabled"
+								:label="$t('bulk_album_edit.' + field.label)"
+								:ui="{ label: field.red ? 'text-error' : '' }"
+							/>
+							<USwitch
+								:model-value="editBoolValues[field.key]"
+								:disabled="field.seOnly === true && !is_se_enabled"
+								:color="field.red ? 'error' : 'primary'"
+								@update:model-value="(v: boolean) => onBoolChange(field.key, v)"
+							/>
+						</div>
+					</div>
+				</div>
+			</div>
+		</template>
+		<template #footer>
+			<div class="flex w-full gap-2">
+				<UButton
+					class="flex-1 justify-center"
+					:label="$t('bulk_album_edit.cancel')"
+					color="neutral"
+					variant="soft"
+					@click="
+						() => {
+							visible = false;
+						}
+					"
+				/>
+				<UButton
+					class="flex-1 justify-center"
+					:label="$t('bulk_album_edit.apply')"
+					color="primary"
+					variant="solid"
+					:disabled="!hasAnyEnabled"
+					@click="doEditFields"
+				/>
+			</div>
+		</template>
+	</UModal>
+</template>
+
+<script setup lang="ts">
+import { computed, ref, watch } from "vue";
+import { storeToRefs } from "pinia";
+import { useAppToast } from "@/v8/composables/useAppToast";
+import BulkAlbumEditService from "@/services/bulk-album-edit-service";
+import {
+	licenseOptions,
+	photoLayoutOptions,
+	photoSortingColumnsOptions,
+	albumSortingColumnsOptions,
+	sortingOrdersOptions,
+	aspectRatioOptions,
+	timelinePhotoGranularityOptions,
+	timelineAlbumGranularityOptions,
+	timeZoneOptions,
+	type SelectOption,
+} from "@/config/constants";
+import { useLycheeStateStore } from "@/stores/LycheeState";
+import { trans } from "laravel-vue-i18n";
+import { optionFor, sortingOrderValueFor, timelineSelectOptions, withDefaultOption } from "@/v8/utils/albumSelectOptions";
+
+type EnumField = { key: string; label: string; options: SelectOption<string | null>[] };
+type SortingPair = { col: EnumField; order: EnumField };
+
+const props = defineProps<{
+	albumIds: string[];
+}>();
+
+const emits = defineEmits<{
+	patched: [];
+}>();
+
+const visible = defineModel<boolean>("visible", { default: false });
+
+const toast = useAppToast();
+
+const { is_se_enabled, is_se_preview_enabled, is_flow_opt_in_strategy } = storeToRefs(useLycheeStateStore());
+
+const editEnabled = ref<Record<string, boolean>>({});
+const editTextValues = ref<Record<string, string | null>>({});
+const editEnumValues = ref<Record<string, string | null>>({});
+const editBoolValues = ref<Record<string, boolean>>({});
+// Feature 068 (FR-068-17): this dialog's first date-typed field - the
+// datetime-local string and its timezone offset are tracked separately,
+// combined into one ISO string only at submit time (onDateChange/doEditFields).
+const editDateValues = ref<Record<string, string | null>>({});
+const editDateTzValues = ref<Record<string, string | null>>({});
+
+const textFields = [
+	{ key: "description", label: "field_description" },
+	{ key: "copyright", label: "field_copyright" },
+];
+
+// Feature 105 (FR-105-10): "Default" (`null`) sets a field back to the gallery setting.
+const enumFields: EnumField[] = [
+	{ key: "license", label: "field_license", options: licenseOptions },
+	{ key: "photo_layout", label: "field_photo_layout", options: withDefaultOption(photoLayoutOptions) },
+	{ key: "album_thumb_aspect_ratio", label: "field_album_thumb_aspect_ratio", options: withDefaultOption(aspectRatioOptions) },
+	{ key: "album_timeline", label: "field_album_timeline", options: timelineSelectOptions(timelineAlbumGranularityOptions) },
+	{ key: "photo_timeline", label: "field_photo_timeline", options: timelineSelectOptions(timelinePhotoGranularityOptions) },
+];
+
+const sortingPairs: SortingPair[] = [
+	{
+		col: { key: "photo_sorting_col", label: "field_photo_sorting_col", options: withDefaultOption(photoSortingColumnsOptions) },
+		order: { key: "photo_sorting_order", label: "field_photo_sorting_order", options: sortingOrdersOptions },
+	},
+	{
+		col: { key: "album_sorting_col", label: "field_album_sorting_col", options: withDefaultOption(albumSortingColumnsOptions) },
+		order: { key: "album_sorting_order", label: "field_album_sorting_order", options: sortingOrdersOptions },
+	},
+];
+// Shows "Default" for the order of a "Default" column, which its own list does not offer.
+const sortingOrderLookup = withDefaultOption(sortingOrdersOptions);
+
+const dateFields = [{ key: "published_at", label: "field_published_at" }];
+
+const boolFields = [
+	{ key: "is_nsfw", label: "field_is_nsfw", red: true, seOnly: false },
+	{ key: "is_public", label: "field_is_public", red: false, seOnly: false },
+	{ key: "is_link_required", label: "field_is_link_required", red: false, seOnly: false },
+	{ key: "grants_full_photo_access", label: "field_grants_full_photo_access", red: false, seOnly: false },
+	{ key: "grants_download", label: "field_grants_download", red: false, seOnly: false },
+	{ key: "grants_upload", label: "field_grants_upload", red: true, seOnly: true },
+];
+
+const visibleBoolFields = computed(() => boolFields.filter((f) => !f.seOnly || is_se_enabled.value || is_se_preview_enabled.value));
+
+const hasAnyEnabled = computed(() => Object.values(editEnabled.value).some((v) => v === true));
+
+// A ticked column is always sent with its order (FR-105-10): the album ignores one without the other.
+function isOrderLocked(pair: SortingPair): boolean {
+	return editEnabled.value[pair.col.key] === true;
+}
+
+function sentOrder(pair: SortingPair): string | null {
+	if (!isOrderLocked(pair)) {
+		return editEnumValues.value[pair.order.key];
+	}
+	return sortingOrderValueFor(editEnumValues.value[pair.col.key], editEnumValues.value[pair.order.key]);
+}
+
+function selectedLabel(option: SelectOption<string | null> | undefined): string {
+	// A single space (matching USelectMenu's own placeholder fallback) keeps the
+	// trigger's line box at its normal height; an empty string collapses it.
+	return option ? trans(option.label) : " ";
+}
+
+function onTextChange(key: string, val: string | null): void {
+	editTextValues.value[key] = val;
+	editEnabled.value[key] = true;
+}
+
+function onEnumChange(key: string, val: string | null): void {
+	editEnumValues.value[key] = val;
+	editEnabled.value[key] = true;
+}
+
+function onBoolChange(key: string, val: boolean): void {
+	editBoolValues.value[key] = val;
+	editEnabled.value[key] = true;
+}
+
+// Mirrors AlbumProperties.vue's own `browserUtcOffset()` - a bare
+// datetime-local value has no timezone of its own, so one must be picked
+// before it can be sent; defaulting to the browser's own offset here keeps
+// `doEditFields()` from ever appending an empty (offset-less) suffix.
+function browserUtcOffset(): string {
+	const minutes = -new Date().getTimezoneOffset();
+	const sign = minutes >= 0 ? "+" : "-";
+	const abs = Math.abs(minutes);
+	const pad = (n: number) => n.toString().padStart(2, "0");
+	return `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}
+
+function onDateChange(key: string, val: string | null): void {
+	editDateValues.value[key] = val;
+	editEnabled.value[key] = true;
+	if (val !== null && (editDateTzValues.value[key] === null || editDateTzValues.value[key] === undefined)) {
+		editDateTzValues.value[key] = browserUtcOffset();
+	}
+}
+
+function onDateTzChange(key: string, val: string | null): void {
+	editDateTzValues.value[key] = val;
+	editEnabled.value[key] = true;
+}
+
+watch(visible, (val) => {
+	if (val) {
+		const enabled: Record<string, boolean> = {};
+		const textVals: Record<string, string | null> = {};
+		const enumVals: Record<string, string | null> = {};
+		const boolVals: Record<string, boolean> = {};
+		const dateVals: Record<string, string | null> = {};
+		const dateTzVals: Record<string, string | null> = {};
+		textFields.forEach((f) => {
+			enabled[f.key] = false;
+			textVals[f.key] = null;
+		});
+		enumFields.forEach((f) => {
+			enabled[f.key] = false;
+			enumVals[f.key] = null;
+		});
+		sortingPairs.forEach((pair) => {
+			[pair.col, pair.order].forEach((f) => {
+				enabled[f.key] = false;
+				enumVals[f.key] = null;
+			});
+			enumVals[pair.order.key] = "ASC";
+		});
+		boolFields.forEach((f) => {
+			enabled[f.key] = false;
+			boolVals[f.key] = false;
+		});
+		dateFields.forEach((f) => {
+			enabled[f.key] = false;
+			dateVals[f.key] = null;
+			dateTzVals[f.key] = null;
+		});
+		editEnabled.value = enabled;
+		editTextValues.value = textVals;
+		editEnumValues.value = enumVals;
+		editBoolValues.value = boolVals;
+		editDateValues.value = dateVals;
+		editDateTzValues.value = dateTzVals;
+	}
+});
+
+function doEditFields(): void {
+	const payload: Record<string, unknown> = { album_ids: props.albumIds };
+	textFields.forEach((f) => {
+		if (editEnabled.value[f.key] === true) {
+			payload[f.key] = editTextValues.value[f.key];
+		}
+	});
+	enumFields.forEach((f) => {
+		if (editEnabled.value[f.key] === true) {
+			payload[f.key] = editEnumValues.value[f.key];
+		}
+	});
+	sortingPairs.forEach((pair) => {
+		[pair.col, pair.order].forEach((f) => {
+			if (editEnabled.value[f.key] === true) {
+				payload[f.key] = editEnumValues.value[f.key];
+			}
+		});
+		if (isOrderLocked(pair)) {
+			payload[pair.order.key] = sentOrder(pair);
+		}
+	});
+	boolFields.forEach((f) => {
+		if (editEnabled.value[f.key] === true) {
+			payload[f.key] = editBoolValues.value[f.key];
+		}
+	});
+	for (const f of dateFields) {
+		if (editEnabled.value[f.key] !== true) {
+			continue;
+		}
+		const date = editDateValues.value[f.key];
+		if (date === null || date === "") {
+			payload[f.key] = null;
+			continue;
+		}
+		const tz = editDateTzValues.value[f.key];
+		if (tz === null || tz === undefined) {
+			// Block submission rather than silently sending an offset-less
+			// value the backend would otherwise interpret in its own
+			// default timezone.
+			toast.add({ severity: "error", summary: trans("toasts.error"), detail: trans("bulk_album_edit.error_missing_timezone"), life: 3000 });
+			return;
+		}
+		// A `datetime-local` input value omits seconds when they are zero
+		// (`YYYY-MM-DDTHH:mm`), but the backend requires `Y-m-d\TH:i:sP`.
+		payload[f.key] = `${date.length === 16 ? `${date}:00` : date}${tz}`;
+	}
+
+	BulkAlbumEditService.patchAlbums(payload as Parameters<typeof BulkAlbumEditService.patchAlbums>[0])
+		.then(() => {
+			toast.add({ severity: "success", summary: trans("toasts.success"), detail: trans("bulk_album_edit.success_patch"), life: 3000 });
+			visible.value = false;
+			emits("patched");
+		})
+		.catch(() => {
+			toast.add({ severity: "error", summary: trans("toasts.error"), detail: trans("bulk_album_edit.error_patch"), life: 3000 });
+		});
+}
+</script>

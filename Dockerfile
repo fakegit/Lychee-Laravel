@@ -1,0 +1,310 @@
+# Lychee - Laravel Backend Dockerfile
+# Multi-stage build with Laravel Octane + FrankenPHP
+ARG NODE_ENV=production
+
+# ============================================================================
+# Stage 1: Composer Dependencies
+# ============================================================================
+FROM composer:2.11.1@sha256:8de2184c6de224f4689e8f80ed5f5edaf0030b6b8b7839a22a2bcb6722ac87d0 AS composer
+
+WORKDIR /app
+
+# Copy composer files first for layer caching
+COPY composer.json composer.lock ./
+
+# Telemetry flavor: add the OpenTelemetry SDK, the OTLP exporter and the
+# auto-instrumentation packages, which composer.json only suggests.
+# The GitHub VCS repositories are dropped first: resolving against them
+# needs authenticated GitHub API calls, and the packages they provide stay
+# pinned by composer.lock anyway (only the new packages are resolved).
+ARG TELEMETRY=false
+RUN if [ "$TELEMETRY" = "true" ]; then \
+    composer config --unset repositories && \
+    composer require \
+    --no-install \
+    --no-interaction \
+    --no-progress \
+    --no-scripts \
+    --ignore-platform-reqs \
+    open-telemetry/sdk:^1.15 \
+    open-telemetry/exporter-otlp:^1.4 \
+    open-telemetry/opentelemetry-auto-laravel:^1.8 \
+    open-telemetry/opentelemetry-auto-guzzle:^1.4 \
+    open-telemetry/opentelemetry-auto-pdo:^0.5.0; \
+    fi
+
+# Install dependencies (no dev packages for production)
+# Remove markdown and test directories to slim down the image
+RUN composer install \
+    --no-dev \
+    --no-interaction \
+    --no-progress \
+    --no-scripts \
+    --prefer-dist \
+    --optimize-autoloader \
+    --ignore-platform-reqs \
+    && find vendor \
+    \( -iname "*.md" -o -iname "test" -o -iname "tests" \) \
+    -exec rm -rf {} +
+
+# ============================================================================
+# Stage 2: Node.js Build for Frontend Assets
+# ============================================================================
+FROM node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216 AS node
+
+# Build argument to control dev vs production build
+ARG NODE_ENV
+ENV NODE_ENV=$NODE_ENV
+
+WORKDIR /app
+
+# Copy package files for layer caching
+COPY package.json package-lock.json ./
+
+# Install dependencies
+RUN npm ci --no-audit
+
+# Copy frontend source
+COPY resources/ ./resources/
+COPY public/ ./public/
+COPY lang/ ./lang/
+COPY vite.config.ts vite.embed.config.ts tsconfig.json ./
+
+# Build frontend assets
+# When NODE_ENV=development, Vite sets import.meta.env.DEV=true
+RUN npm run build
+
+# ============================================================================
+# Stage 3: ImageMagick with JPEG XL support + imagick PHP extension
+# ============================================================================
+# Debian's ImageMagick is built without JPEG XL, so we build our own (ADR-101-01).
+# Bump IMAGEMAGICK_VERSION/IMAGEMAGICK_SHA256 on ImageMagick security releases.
+FROM dunglas/frankenphp:1.13.5-php8-trixie@sha256:7e73a27eb7712a5b4073b92f8f0dec91e9400138604b76cc791589faaa6a639c AS imagemagick
+
+ARG IMAGEMAGICK_VERSION=7.1.2-32
+ARG IMAGEMAGICK_SHA256=940e349f0ef394e658fd57400b83d1d7a81b954f6e7bdbfbfad31b2718c10add
+ARG IMAGICK_VERSION=3.8.1
+ARG IMAGICK_SHA256=3a3587c0a524c17d0dad9673a160b90cd776e836838474e173b549ed864352ee
+
+# Fail on the checksum pipes below, not only on their last command
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    curl \
+    libjxl-dev \
+    libjpeg62-turbo-dev \
+    libpng-dev \
+    libwebp-dev \
+    libtiff-dev \
+    libheif-dev \
+    libraw-dev \
+    libopenjp2-7-dev \
+    liblcms2-dev \
+    libfreetype-dev \
+    libxml2-dev \
+    liblzma-dev \
+    libbz2-dev \
+    libzstd-dev \
+    zlib1g-dev \
+    imagemagick-7-common \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build/imagemagick
+RUN curl -fsSL -o /build/imagemagick.tar.gz "https://github.com/ImageMagick/ImageMagick/archive/refs/tags/${IMAGEMAGICK_VERSION}.tar.gz" \
+    && echo "${IMAGEMAGICK_SHA256}  /build/imagemagick.tar.gz" | sha256sum -c - \
+    && tar -xzf /build/imagemagick.tar.gz --strip-components=1 \
+    && ./configure --prefix=/opt/imagemagick \
+        --enable-shared --disable-static --disable-docs --disable-hdri --with-quantum-depth=16 \
+        --without-modules --without-x --without-perl --without-magick-plus-plus \
+        --with-jxl=yes --with-heic=yes --with-raw=yes --with-openjp2=yes --with-webp=yes \
+    && make -j"$(nproc)" \
+    && make install \
+    # Keep Debian's security policy (resource limits, disabled coders) instead of the upstream open policy
+    && cp /etc/ImageMagick-7/policy.xml /opt/imagemagick/etc/ImageMagick-7/policy.xml
+
+WORKDIR /build/imagick
+RUN curl -fsSL -o /build/imagick.tgz "https://pecl.php.net/get/imagick-${IMAGICK_VERSION}.tgz" \
+    && echo "${IMAGICK_SHA256}  /build/imagick.tgz" | sha256sum -c - \
+    && tar -xzf /build/imagick.tgz --strip-components=1 \
+    && phpize \
+    && ./configure --with-imagick=/opt/imagemagick \
+    && make -j"$(nproc)" \
+    && mkdir -p /opt/imagemagick/php \
+    && cp modules/imagick.so /opt/imagemagick/php/imagick.so
+
+# ============================================================================
+# Stage 4: Production FrankenPHP Image
+# ============================================================================
+FROM dunglas/frankenphp:1.13.5-php8-trixie@sha256:7e73a27eb7712a5b4073b92f8f0dec91e9400138604b76cc791589faaa6a639c
+
+ARG USER=appuser
+
+LABEL maintainer="lycheeorg"
+LABEL org.opencontainers.image.title="Lychee"
+LABEL org.opencontainers.image.description="Self-hosted photo management system done right."
+LABEL org.opencontainers.image.authors="LycheeOrg"
+LABEL org.opencontainers.image.vendor="LycheeOrg"
+LABEL org.opencontainers.image.source="https://github.com/LycheeOrg/Lychee"
+LABEL org.opencontainers.image.url="https://lycheeorg.github.io"
+LABEL org.opencontainers.image.documentation="https://lycheeorg.dev/docs"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.base.name="dunglas/frankenphp:php8.5-trixie"
+
+# ImageMagick with JPEG XL support and the imagick extension built against it (stage 3)
+COPY --from=imagemagick /opt/imagemagick /opt/imagemagick
+ENV PATH="/opt/imagemagick/bin:${PATH}"
+
+# Install system utilities and PHP extensions
+# hadolint ignore=DL3008,DL3009
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+    apt \
+    linux-libc-dev \
+    libimage-exiftool-perl \
+    ffmpeg \
+    jpegoptim \
+    procps \
+    netcat-openbsd \
+    unzip \
+    curl \
+    bash \
+    gosu \
+	ghostscript \
+    # Update with respect to vulnerabilities detected with Trivy
+    gzip \
+    libgssapi-krb5-2 \
+    libssh2-1t64 \
+    perl \
+    libperl5.40 \
+    perl-modules-5.40 \
+    libsqlite3-0 \
+    # Runtime libraries of the ImageMagick build (stage 3)
+    libbrotli1 \
+    libdeflate0 \
+    libfreetype6 \
+    libgomp1 \
+    libheif1 \
+    libheif-plugin-libde265 \
+    libhwy1t64 \
+    libjbig0 \
+    libjpeg62-turbo \
+    libjxl0.11 \
+    liblcms2-2 \
+    liblerc4 \
+    libopenjp2-7 \
+    libpng16-16t64 \
+    libraw23t64 \
+    libsharpyuv0 \
+    libtiff6 \
+    libwebp7 \
+    libwebpdemux2 \
+    libwebpmux3 \
+    libxml2 \
+	&& sed -i '/<\/policymap>/i \  <policy domain="coder" rights="read|write" pattern="PDF" \/>' /opt/imagemagick/etc/ImageMagick-7/policy.xml \
+    && echo /opt/imagemagick/lib > /etc/ld.so.conf.d/imagemagick.conf \
+    && ldconfig \
+    && cp /opt/imagemagick/php/imagick.so "$(php-config --extension-dir)/imagick.so" \
+    && docker-php-ext-enable imagick \
+    && install-php-extensions \
+    pdo_mysql \
+    pdo_pgsql \
+    gd \
+    zip \
+    bcmath \
+    ldap \
+    sodium \
+    opcache \
+    pcntl \
+    exif \
+    intl \
+    redis \
+	&& apt-get clean -qy \
+    && rm -rf /var/lib/apt/lists/*
+
+# Fail the build if Imagick cannot round-trip JPEG XL (Feature 101, FR-101-11)
+RUN php -r '$i = new Imagick(); $i->newImage(8, 8, "red"); $i->setImageFormat("jxl"); $j = new Imagick(); $j->readImageBlob($i->getImagesBlob()); exit($j->getImageWidth() === 8 ? 0 : 1);'
+
+# Telemetry flavor: native OpenTelemetry hooks and protobuf encoding
+ARG TELEMETRY=false
+RUN if [ "$TELEMETRY" = "true" ]; then \
+    install-php-extensions opentelemetry protobuf; \
+    fi
+
+WORKDIR /app
+
+# Copy application code
+COPY --chown=www-data:www-data . .
+
+# Copy vendor and the matching composer files from composer stage
+COPY --from=composer --chown=www-data:www-data /app/vendor ./vendor
+COPY --from=composer --chown=www-data:www-data /app/composer.json /app/composer.lock ./
+
+# Copy built frontend assets from node stage
+COPY --from=node --chown=www-data:www-data /app/public/build ./public/build
+COPY --from=node --chown=www-data:www-data /app/public/embed ./public/embed
+
+# Ensure storage and bootstrap/cache are writable with minimal permissions
+RUN mkdir -p storage/framework/cache \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/logs \
+    bootstrap/cache \
+    public/dist \
+    && chown -R www-data:www-data storage bootstrap/cache public \
+    && chmod -R 777 storage bootstrap/cache \
+    && chmod -R 775 public/dist \
+    && touch /app/frankenphp_target \
+    && touch /app/public/dist/user.css \
+    && touch /app/public/dist/custom.js \
+    && chown www-data:www-data /app/public/dist/user.css /app/public/dist/custom.js \
+    && chmod 644 /app/public/dist/user.css /app/public/dist/custom.js \
+    && cp $PHP_INI_DIR/php.ini-production $PHP_INI_DIR/php.ini \
+    && echo "upload_max_filesize=128M" > $PHP_INI_DIR/conf.d/custom.ini \
+    && echo "post_max_size=128M" >> $PHP_INI_DIR/conf.d/custom.ini \
+    && echo "memory_limit=\${PHP_MEMORY_LIMIT:-1024M}" >> $PHP_INI_DIR/conf.d/custom.ini \
+    && echo "max_execution_time=\${PHP_MAX_EXECUTION_TIME:-3000}" >> $PHP_INI_DIR/conf.d/custom.ini \
+    && echo "expose_php=Off" >> $PHP_INI_DIR/conf.d/custom.ini \
+    && echo "display_errors=Off" >> $PHP_INI_DIR/conf.d/custom.ini \
+    && echo "log_errors=On" >> $PHP_INI_DIR/conf.d/custom.ini \
+    && echo "session.upload_progress.enabled=Off" >> $PHP_INI_DIR/conf.d/custom.ini
+
+# Copy entrypoint and validation scripts
+COPY docker/scripts/00-conf-check.sh /usr/local/bin/00-conf-check.sh
+COPY docker/scripts/01-validate-env.sh /usr/local/bin/01-validate-env.sh
+COPY docker/scripts/02-dump-env.sh /usr/local/bin/02-dump-env.sh
+COPY docker/scripts/03-db-check.sh /usr/local/bin/03-db-check.sh
+COPY docker/scripts/04-user-setup.sh /usr/local/bin/04-user-setup.sh
+COPY docker/scripts/05-permissions-check.sh /usr/local/bin/05-permissions-check.sh
+COPY docker/scripts/create-admin-user.sh /usr/local/bin/create-admin-user.sh
+COPY docker/scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+RUN chmod +x /usr/local/bin/00-conf-check.sh \
+    /usr/local/bin/01-validate-env.sh \
+    /usr/local/bin/02-dump-env.sh \
+    /usr/local/bin/03-db-check.sh \
+    /usr/local/bin/04-user-setup.sh \
+    /usr/local/bin/05-permissions-check.sh \
+    /usr/local/bin/create-admin-user.sh \
+    /usr/local/bin/entrypoint.sh \
+    && mkdir -p /data /config \
+    && chmod -R 775 /data /config
+
+# Expose port 8000 (Octane)
+EXPOSE 8000
+
+# Set entrypoint
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Health check against the Octane web server
+HEALTHCHECK CMD ["sh", "-c", "curl --fail http://localhost:8000/ || exit 1"]
+
+# Default command: run Octane with FrankenPHP
+# Container mode is controlled by LYCHEE_MODE environment variable:
+# - "web" (default): Runs FrankenPHP/Octane web server (this CMD)
+# - "worker": Runs Laravel queue worker (entrypoint.sh overrides CMD)
+# See docs/specs/2-how-to/deploy-worker-mode.md for deployment guide
+CMD ["php", "artisan", "octane:start", "--server=frankenphp", "--host=0.0.0.0", "--port=8000"]

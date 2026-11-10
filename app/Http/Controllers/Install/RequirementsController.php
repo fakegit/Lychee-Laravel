@@ -1,40 +1,32 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\Http\Controllers\Install;
 
-use App\Actions\Install\DefaultConfig;
-use App\Actions\Install\RequirementsChecker;
-use App\Http\Controllers\Controller;
+use App\Actions\InstallUpdate\DefaultConfig;
+use App\Actions\InstallUpdate\RequirementsChecker;
+use Illuminate\Contracts\View\View;
+use Illuminate\Routing\Controller;
 
 final class RequirementsController extends Controller
 {
-	/**
-	 * @var RequirementsChecker
-	 */
-	protected $requirements;
-	/**
-	 * @var DefaultConfig
-	 */
-	protected $config;
-
-	/**
-	 * @param RequirementsChecker $checker
-	 * @param Config              $config
-	 */
-	public function __construct(RequirementsChecker $checker, DefaultConfig $config)
-	{
-		$this->requirements = $checker;
-		$this->config = $config;
+	public function __construct(
+		private RequirementsChecker $requirements,
+		private DefaultConfig $config,
+	) {
 	}
 
 	/**
 	 * Display the requirements page.
-	 *
-	 * @return View
 	 */
-	public function view()
+	public function view(): View
 	{
-		$phpSupportInfo = $this->requirements->checkPHPversion(
+		$php_support_info = $this->requirements->checkPHPVersion(
 			$this->config->get_core()['minPhpVersion']
 		);
 		$reqs = $this->requirements->check(
@@ -44,7 +36,7 @@ final class RequirementsController extends Controller
 		return view('install.requirements', [
 			'title' => 'Lychee-installer',
 			'step' => 1,
-			'phpSupportInfo' => $phpSupportInfo,
+			'phpSupportInfo' => $php_support_info,
 			'requirements' => $reqs['requirements'],
 			'errors' => $reqs['errors'] ?? null,
 		]);

@@ -1,0 +1,91 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Profile page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Profil',
+    'login' => [
+        'header' => 'Profil',
+        'enter_current_password' => 'Zadajte svoje aktuálne heslo:',
+        'current_password' => 'Aktuálne heslo',
+        'credentials_update' => 'Vaše prihlasovacie údaje sa zmenia na nasledujúce:',
+        'username' => 'Používateľské meno',
+        'change_password' => 'Zmeniť heslo',
+        'cancel_password_change' => 'Zrušiť zmenu hesla',
+        'new_password' => 'Nové heslo',
+        'confirm_new_password' => 'Potvrďte nové heslo',
+        'password_strength_info' => 'Sila hesla je odhad pomocou <a href="https://github.com/dropbox/zxcvbn" class="inline-block border-b border-info border-dashed" target="_blank" rel="noreferrer">algoritmu zxcvbn</a>.',
+        'email_instruction' => 'Pridajte nižšie svoj e-mail, ak chcete dostávať e-mailové upozornenia. Ak ich už nechcete dostávať, jednoducho e-mail nižšie odstráňte.',
+        'email' => 'E-mail',
+        'change' => 'Zmeniť prihlasovacie údaje',
+        'api_token' => 'API Token ...',
+        'missing_fields' => 'Chýbajúce polia',
+        'ldap_managed' => 'Prihlasovacie údaje používateľa sú spravované pomocou LDAP.',
+    ],
+    'register' => [
+        'username_exists' => 'Používateľské meno už existuje.',
+        'password_mismatch' => 'Heslá sa nezhodujú.',
+        'signup' => 'Zaregistrovať sa',
+        'error' => 'Pri registrácii vášho účtu nastala chyba.',
+        'success' => 'Váš účet bol úspešne vytvorený.',
+    ],
+    'admin_setup' => [
+        'header' => 'Nastavte si administrátorský účet',
+        'welcome' => 'Vitajte v Lychee,<br>začnime vytvorením administrátorského účtu.',
+        'submit' => 'Vytvoriť administrátorský účet',
+        'success' => 'Administrátorský účet bol úspešne vytvorený.',
+        'error' => 'Pri vytváraní administrátorského účtu nastala chyba.',
+        'already_exists' => 'Administrátorský účet už bol nastavený.',
+    ],
+    'token' => [
+        'unavailable' => 'Tento token ste si už zobrazili.',
+        'no_data' => 'Nebol vygenerovaný žiadny API token.',
+        'disable' => 'Zakázať',
+        'disabled' => 'Token zakázaný',
+        'warning' => 'Tento token sa už znova nezobrazí. Skopírujte si ho a uschovajte na bezpečnom mieste.',
+        'reset' => 'Obnoviť token',
+        'create' => 'Vytvoriť nový token',
+    ],
+    'oauth' => [
+        'header' => 'OAuth',
+        'header_not_available' => 'OAuth nie je k dispozícii',
+        'setup_env' => 'Nastavte prihlasovacie údaje vo svojom súbore .env',
+        'token_registered' => 'Token %s bol zaregistrovaný.',
+        'setup' => 'Nastaviť %s',
+        'reset' => 'obnoviť',
+        'credential_deleted' => 'Prihlasovací údaj bol odstránený!',
+    ],
+    'u2f' => [
+        'header' => 'Passkey/MFA/2FA',
+        'info' => 'Toto iba umožňuje použiť WebAuthn na overenie namiesto používateľského mena a hesla.',
+        'empty' => 'Zoznam prihlasovacích údajov je prázdny!',
+        'not_secure' => 'Prostredie nie je zabezpečené. U2F nie je k dispozícii.',
+        'new' => 'Zaregistrovať nové zariadenie.',
+        'credential_deleted' => 'Prihlasovací údaj bol odstránený!',
+        'credential_updated' => 'Prihlasovací údaj bol aktualizovaný!',
+        'credential_registred' => 'Registrácia bola úspešná!',
+        '5_chars' => 'Aspoň 5 znakov.',
+    ],
+    'preferences' => [
+        'header' => 'Predvoľby',
+        'save' => 'Uložiť predvoľbu',
+        'reset' => 'Obnoviť',
+        'change_saved' => 'Predvoľba bola uložená!',
+    ],
+    'shared_albums' => [
+        'instruction' => 'Zvoľte, ako sa majú zdieľané albumy (albumy iných používateľov) zobrazovať vo vašej galérii:',
+        'mode_default' => 'Použiť predvolené nastavenie servera',
+        'mode_default_desc' => 'Prevziať predvolený režim viditeľnosti servera.',
+        'mode_show' => 'Zobraziť spolu',
+        'mode_show_desc' => 'Zdieľané albumy sa zobrazia pod vašimi albumami.',
+        'mode_separate' => 'Samostatné karty',
+        'mode_separate_desc' => 'Zobraziť albumy na samostatných kartách "Moje albumy" a "Zdieľané so mnou".',
+        'mode_separate_shared_only' => 'Iba zdieľané',
+        'mode_separate_shared_only_desc' => 'Samostatné karty zobrazujúce iba priamo zdieľané albumy (bez verejných albumov).',
+        'mode_hide' => 'Skryť',
+        'mode_hide_desc' => 'Nezobrazovať žiadne zdieľané albumy.',
+    ],
+];

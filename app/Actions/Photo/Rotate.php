@@ -1,169 +1,191 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\Actions\Photo;
 
-use App\Actions\Photo\Extensions\Checksum;
-use App\Actions\Photo\Extensions\Constants;
-use App\Actions\Photo\Extensions\ImageEditing;
-use App\Image\ImageHandlerInterface;
-use App\Metadata\Extractor;
-use App\Models\Logs;
+use App\Contracts\Exceptions\LycheeException;
+use App\Contracts\Models\AbstractSizeVariantNamingStrategy;
+use App\Contracts\Models\SizeVariantFactory;
+use App\DTO\CreateSizeVariantFlags;
+use App\DTO\ImageDimension;
+use App\Enum\SizeVariantType;
+use App\Enum\StorageDiskType;
+use App\Exceptions\Handler;
+use App\Exceptions\Internal\FrameworkException;
+use App\Exceptions\Internal\IllegalOrderOfOperationException;
+use App\Exceptions\Internal\InvalidRotationDirectionException;
+use App\Exceptions\Internal\LycheeAssertionError;
+use App\Exceptions\Internal\LycheeDomainException;
+use App\Exceptions\MediaFileUnsupportedException;
+use App\Image\Files\FlysystemFile;
+use App\Image\Handlers\ImageHandler;
+use App\Image\StreamStat;
 use App\Models\Photo;
-use Helpers;
-use Illuminate\Support\Facades\Storage;
+use App\Models\SizeVariant;
+use Illuminate\Contracts\Container\BindingResolutionException;
+use Illuminate\Support\Collection;
 
 class Rotate
 {
-	use Checksum;
-	use Constants;
-	use ImageEditing;
+	protected Photo $photo;
+	/** @var int either `1` for counterclockwise or `-1` for clockwise rotation */
+	protected int $direction;
+	protected FlysystemFile $source_file;
+	protected StorageDiskType $disk_file;
+	protected AbstractSizeVariantNamingStrategy $naming_strategy;
 
-	public $imageHandler;
+	/**
+	 * @param Photo $photo
+	 * @param int   $direction
+	 *
+	 * @throws MediaFileUnsupportedException     thrown, if rotation of $photo
+	 *                                           is not supported
+	 * @throws InvalidRotationDirectionException thrown if $direction neither
+	 *                                           equals -1 nor 1
+	 * @throws IllegalOrderOfOperationException
+	 * @throws FrameworkException
+	 */
+	public function __construct(
+		Photo $photo,
+		int $direction,
+	) {
+		try {
+			if ($photo->isVideo()) {
+				throw new MediaFileUnsupportedException('Rotation of a video is unsupported');
+			}
+			if ($photo->live_photo_short_path !== null) {
+				throw new MediaFileUnsupportedException('Rotation of a live photo is unsupported');
+			}
+			if ($photo->isRaw()) {
+				throw new MediaFileUnsupportedException('Rotation of a raw photo is unsupported');
+			}
+			// direction is valid?
+			if (($direction !== 1) && ($direction !== -1)) {
+				throw new InvalidRotationDirectionException();
+			}
+			$this->photo = $photo;
+			$this->direction = $direction;
+			$this->source_file = $this->photo->size_variants->getOriginal()->getFile();
+			$this->disk_file = $this->photo->size_variants->getOriginal()->storage_disk;
 
-	public function __construct()
-	{
-		$this->imageHandler = app(ImageHandlerInterface::class);
+			$this->naming_strategy = resolve(AbstractSizeVariantNamingStrategy::class);
+			$this->naming_strategy->setPhoto($this->photo);
+		} catch (BindingResolutionException $e) {
+			throw new FrameworkException('Laravel\'s container component', $e);
+		}
 	}
 
-	private function check(Photo $photo, int $direction): bool
+	/**
+	 * Rotates the photo and its duplicates and re-generates all size variants.
+	 *
+	 * @return Photo the updated (i.e. rotated) photo
+	 *
+	 * @throws LycheeException
+	 */
+	public function do(): Photo
 	{
-		if ($photo->isVideo()) {
-			Logs::error(__METHOD__, __LINE__, 'Trying to rotate a video');
-
-			return false;
+		// Load the previous original image and rotate it
+		$image = new ImageHandler();
+		$image->load($this->source_file);
+		try {
+			$image->rotate(90 * $this->direction);
+		} catch (LycheeDomainException $e) {
+			throw LycheeAssertionError::createFromUnexpectedException($e);
 		}
 
-		if ($photo->livePhotoUrl !== null) {
-			Logs::error(__METHOD__, __LINE__, 'Trying to rotate a live photo');
+		// Delete all size variants from current photo, this will also take
+		// care of erasing the actual "physical" files from storage.
+		// This will bring photo entity into the same state as it would be if
+		// we were importing a new photo.
+		// This also deletes the original size variant
+		$this->photo->size_variants->deleteAll();
 
-			return false;
-		}
+		// We reset the photo of the naming strategy after the size
+		// variants have been deleted, in case the naming strategy has based
+		// its choice on the existing size variants.
+		// As the photo has no size variants anymore, we must set the
+		// extension manually from the source file we saved earlier.
+		$this->naming_strategy->setPhoto($this->photo);
+		$this->naming_strategy->setExtension($this->source_file->getExtension());
 
-		if ($photo->type == 'raw') {
-			Logs::error(__METHOD__, __LINE__, 'Trying to rotate a raw file');
+		// Create new target file for rotated original size variant,
+		// and stream it into the final place
+		$target_file = $this->naming_strategy->createFile(SizeVariantType::ORIGINAL, new CreateSizeVariantFlags(disk: $this->disk_file));
+		/** @var StreamStat $stream_stat */
+		$stream_stat = $image->save($target_file, true);
 
-			return false;
-		}
+		// The checksum has been changed due to rotation.
+		$old_checksum = $this->photo->checksum;
+		$this->photo->checksum = $stream_stat->checksum;
+		$this->photo->save();
 
-		// direction is valid?
-		if (($direction != 1) && ($direction != -1)) {
-			Logs::error(__METHOD__, __LINE__, 'Direction must be 1 or -1');
-
-			return false;
-		}
-
-		return true;
-	}
-
-	public function do(Photo $photo, int $direction)
-	{
-		if (!$this->check($photo, $direction)) {
-			return false;
-		}
-
-		// Generate a temporary name for the rotated file.
-		$big_folder = Storage::path('big/');
-		$url = $photo->url;
-		$path = $big_folder . $url;
-		$extension = Helpers::getExtension($url);
-		if (
-			!($new_tmp = tempnam($big_folder, 'lychee')) ||
-			!@rename($new_tmp, $new_tmp . $extension)
-		) {
-			Logs::notice(__METHOD__, __LINE__, 'Could not create a temporary file.');
-
-			return false;
-		}
-		$new_tmp .= $extension;
-
-		// Rotate the original image.
-		if ($this->imageHandler->rotate($path, ($direction == 1) ? 90 : -90, $new_tmp) === false) {
-			Logs::error(__METHOD__, __LINE__, 'Failed to rotate ' . $path);
-
-			return false;
-		}
-
-		// We will use new names to avoid problems with image caching.
-		$new_prefix = substr($this->checksum($new_tmp), 0, 32);
-		$new_url = $new_prefix . $extension;
-		$new_path = $big_folder . $new_url;
-
-		// Rename the temporary file, now that we know its final name.
-		if (!@rename($new_tmp, $new_path)) {
-			Logs::error(__METHOD__, __LINE__, 'Failed to rename ' . $new_tmp);
-
-			return false;
-		}
-
-		$photo->url = $new_url;
-		$old_width = $photo->width;
-		$photo->width = $photo->height;
-		$photo->height = $old_width;
-
-		// The file size may have changed after the rotation.
-		$metadataExtractor = resolve(Extractor::class);
-		$info = [];
-		$metadataExtractor->size($info, $new_path);
-		$photo->size = $info['size'];
-		// Also restore the original date.
-		if ($photo->takestamp) {
-			@touch($new_path, strtotime($photo->takestamp));
-		}
-
-		// Delete all old image files, including the original.
-		if ($photo->thumbUrl != '') {
-			@unlink(Storage::path('thumb/' . $photo->thumbUrl));
-			if ($photo->thumb2x != 0) {
-				@unlink(Storage::path('thumb/' . Helpers::ex2x($photo->thumbUrl)));
-				$photo->thumb2x = 0;
-			}
-			$photo->thumbUrl = '';
-		}
-		if ($photo->small != '') {
-			@unlink(Storage::path('small/' . $url));
-			$photo->small = '';
-			if ($photo->small2x != '') {
-				@unlink(Storage::path('small/' . Helpers::ex2x($url)));
-				$photo->small2x = '';
-			}
-		}
-		if ($photo->medium != '') {
-			@unlink(Storage::path('medium/' . $url));
-			$photo->medium = '';
-			if ($photo->medium2x != '') {
-				@unlink(Storage::path('medium/' . Helpers::ex2x($url)));
-				$photo->medium2x = '';
-			}
-		}
-		@unlink($path);
-
-		// Create new thumbs and intermediate sizes.
-		if ($this->createThumb($photo) === false) {
-			Logs::error(__METHOD__, __LINE__, 'Could not create thumbnail for photo');
-		} else {
-			$photo->thumbUrl = $new_prefix . '.jpeg';
-		}
-		$this->createSmallerImages($photo);
-
-		// Finally save the updated photo.
-		$photo->save();
-
-		// Deal with duplicates.  We simply update all of them to match.
-		Photo::where('checksum', $photo->checksum)->where('id', '<>', $photo->id)->update(
-			[
-				'url' => $photo->url,
-				'width' => $photo->width,
-				'height' => $photo->height,
-				'size' => $photo->size,
-				'thumbUrl' => $photo->thumbUrl,
-				'thumb2x' => $photo->thumb2x,
-				'small' => $photo->small,
-				'small2x' => $photo->small2x,
-				'medium' => $photo->medium,
-				'medium2x' => $photo->medium2x,
-			]
+		// Re-create original size variant of photo
+		$new_original_size_variant = $this->photo->size_variants->create(
+			SizeVariantType::ORIGINAL,
+			$target_file->getRelativePath(),
+			$image->getDimensions(),
+			$stream_stat->bytes
 		);
 
-		return true;
+		// Re-create remaining size variants
+		try {
+			$size_variant_factory = resolve(SizeVariantFactory::class);
+			$size_variant_factory->init($this->photo, $image, $this->naming_strategy);
+			$new_size_variants = $size_variant_factory->createSizeVariants();
+		} catch (\Throwable $t) {
+			// Don't re-throw the exception, because we do not want the
+			// rotation operation to fail completely only due to missing size
+			// variants.
+			// There are just too many options why the creation of size
+			// variants may fail.
+			Handler::reportSafely($t);
+			$new_size_variants = new Collection();
+		}
+		// Add new original size variant to collection of newly created
+		// size variants; we need this to correctly update the duplicates
+		// below
+		$new_size_variants->add($new_original_size_variant);
+
+		// Deal with duplicates.  We simply update all of them to match.
+		$duplicates = Photo::query()
+			->where('checksum', '=', $old_checksum)
+			->get();
+		/** @var Photo $duplicate */
+		foreach ($duplicates as $duplicate) {
+			$duplicate->checksum = $this->photo->checksum;
+			// Note: It is not correct to simply update the existing size
+			// variants of the duplicates.
+			// Due to rotation the number and type of size variants may have
+			// changed, too.
+			// So we actually have to do a 3-way merge and update:
+			//  1. delete size variants of the duplicates which do not exist
+			//     anymore,
+			//  2. update size variants of the duplicates which still exist,
+			//     and
+			//  3. add new size variants to duplicates which
+			// haven't existed before.
+			// For simplicity, we simply delete all size variants of the
+			// duplicates and re-create them.
+			// Deleting the size variants of the duplicates has also the
+			// advantage that the actual files are erased from storage.
+			$duplicate->size_variants->deleteAll();
+			/** @var SizeVariant $new_size_variant */
+			foreach ($new_size_variants as $new_size_variant) {
+				$duplicate->size_variants->create(
+					$new_size_variant->type,
+					$new_size_variant->short_path,
+					new ImageDimension($new_size_variant->width, $new_size_variant->height),
+					$new_size_variant->filesize
+				);
+			}
+			$duplicate->save();
+		}
+
+		return $this->photo;
 	}
 }

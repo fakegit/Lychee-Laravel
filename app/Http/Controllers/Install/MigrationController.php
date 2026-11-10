@@ -1,57 +1,60 @@
 <?php
 
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
 namespace App\Http\Controllers\Install;
 
-use App\Actions\Install\ApplyMigration;
-use App\Http\Controllers\Controller;
+use App\Actions\InstallUpdate\Pipes\ArtisanKeyGenerate;
+use App\Actions\InstallUpdate\Pipes\ArtisanMigrate;
+use App\Actions\InstallUpdate\Pipes\ArtisanViewClear;
+use App\Actions\InstallUpdate\Pipes\QueryExceptionChecker;
+use App\Actions\InstallUpdate\Pipes\Spacer;
+use App\Exceptions\InstallationFailedException;
+use Illuminate\Contracts\View\View;
+use Illuminate\Pipeline\Pipeline;
+use Illuminate\Routing\Controller;
 
+/**
+ * Class MigrationController.
+ */
 class MigrationController extends Controller
 {
 	/**
-	 * @var ApplyMigration
+	 * Migrates the Lychee DB and generates a new API key.
+	 *
+	 * @return View
 	 */
-	protected $applyMigration;
-
-	public function __construct(ApplyMigration $applyMigration)
-	{
-		$this->applyMigration = $applyMigration;
-	}
-
-	/**
-	 * @return array
-	 */
-	public function view()
+	public function view(): View
 	{
 		$output = [];
-
-		$error = $this->applyMigration->migrate($output);
-		$output[] = '';
-		if (!$error) {
-			$error = $this->applyMigration->keyGenerate($output);
+		$has_errors = false;
+		try {
+			$output = app(Pipeline::class)
+				->send($output)
+				->through([
+					ArtisanViewClear::class,
+					ArtisanMigrate::class,
+					QueryExceptionChecker::class,
+					Spacer::class,
+					ArtisanKeyGenerate::class,
+					Spacer::class,
+				])
+				->thenReturn();
+			// @codeCoverageIgnoreStart
+		} catch (InstallationFailedException) {
+			$has_errors = true;
 		}
-		$output[] = '';
-		if (!$error) {
-			$this->installed($output);
-		}
-		$error = $error ? true : null;
+		// @codeCoverageIgnoreEnd
 
 		return view('install.migrate', [
 			'title' => 'Lychee-installer',
 			'step' => 4,
 			'lines' => $output,
-			'errors' => $error,
+			'errors' => $has_errors,
 		]);
-	}
-
-	/**
-	 * @param array $output
-	 */
-	public function installed(array &$output)
-	{
-		$dateStamp = date('Y-m-d H:i:s');
-		$message = 'Lychee INSTALLED on ' . $dateStamp;
-		file_put_contents(base_path('installed.log'), $message);
-		$output[] = $message;
-		$output[] = 'Created installed.log';
 	}
 }

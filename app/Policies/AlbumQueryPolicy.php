@@ -1,0 +1,836 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+namespace App\Policies;
+
+use App\Constants\AccessPermissionConstants as APC;
+use App\Contracts\Exceptions\InternalLycheeException;
+use App\Eloquent\FixedQueryBuilder;
+use App\Exceptions\Internal\InvalidQueryModelException;
+use App\Exceptions\Internal\LycheeInvalidArgumentException;
+use App\Exceptions\Internal\QueryBuilderException;
+use App\Models\Album;
+use App\Models\BaseAlbumImpl;
+use App\Models\Builders\AlbumBuilder;
+use App\Models\Builders\PersonAlbumBuilder;
+use App\Models\Builders\TagAlbumBuilder;
+use App\Models\PersonAlbum;
+use App\Models\TagAlbum;
+use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as BaseBuilder;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Class AlbumQueryPolicy.
+ */
+class AlbumQueryPolicy
+{
+	/**
+	 * Restricts an album query to _visible_ albums.
+	 *
+	 * An album is called _visible_ if the current user is allowed to see the
+	 * album (itself) within a listing or similar.
+	 * An album is _visible_ if any of the following conditions hold
+	 * (OR-clause)
+	 *
+	 *  - the user is an admin
+	 *  - the user is the owner of the album
+	 *  - the album is shared with the user
+	 *  - the album is public and the album does not require a direct link
+	 *
+	 * Note this makes use of the fact that when an album is NOT shared nor public, the value of is_link_required is NULL.
+	 *
+	 * @template TQuery of AlbumBuilder|FixedQueryBuilder<TagAlbum>|FixedQueryBuilder<Album>
+	 *
+	 * @param TQuery    $query
+	 * @param User|null $user  the current user, or null if not authenticated
+	 *
+	 * @return TQuery
+	 *
+	 * @throws InternalLycheeException
+	 */
+	public function applyVisibilityFilter(AlbumBuilder|FixedQueryBuilder $query, ?User $user): AlbumBuilder|TagAlbumBuilder|FixedQueryBuilder
+	{
+		$this->prepareModelQueryOrFail($query, $user);
+
+		if ($user?->may_administrate === true) {
+			return $query;
+		}
+
+		$user_id = $user?->id;
+
+		// We must wrap everything into an outer query to avoid any undesired
+		// effects in case that the original query already contains an
+		// "OR"-clause.
+		// The sub-query only uses properties (i.e. columns) which are
+		// defined on the common base model for all albums.
+		$visibility_sub_query = function (AlbumBuilder|TagAlbumBuilder|PersonAlbumBuilder $query2) use ($user_id): void {
+			$query2
+				// We laverage that IS_LINK_REQUIRED is NULL if the album is NOT shared publically (left join).
+				->where(APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::IS_LINK_REQUIRED, '=', false)
+				// Current user is the owner of the album
+				// This is the case when is_link_required is NULL
+				->when(
+					$user_id !== null,
+					fn ($q) => $q->orWhere('base_albums.owner_id', '=', $user_id)
+				);
+		};
+
+		return $query->where($visibility_sub_query);
+	}
+
+	/**
+	 * Adds the conditions of an accessible album to the query.
+	 *
+	 * **Attention:** This method is only meant for internal use by
+	 * this class or {@link PhotoQueryPolicy}.
+	 *
+	 * This method adds the WHERE conditions without any further pre-cautions.
+	 * The method silently assumes that the SELECT clause contains the tables
+	 *
+	 *  - **`base_albums`** and
+	 *  - **`computed_access_permissions`**.
+	 *
+	 * Moreover, the raw OR-clauses are added.
+	 * They are not wrapped into a nesting braces `()`.
+	 *
+	 * Note this makes use of the fact that when an album is NOT shared nor public, the value of is_link_required is NULL.
+	 *
+	 * @param BaseBuilder $query
+	 * @param User|null   $user               the current user, or null if not authenticated
+	 * @param string[]    $unlocked_album_ids array of unlocked album IDs
+	 *
+	 * @return BaseBuilder
+	 *
+	 * @throws InternalLycheeException
+	 */
+	public function appendAccessibilityConditions(BaseBuilder $query, ?User $user, array $unlocked_album_ids): BaseBuilder
+	{
+		$user_id = $user?->id;
+
+		try {
+			$query
+				->orWhere(
+					// Album is public/shared (visible or not => IS_LINK_REQUIRED NOT NULL)
+					// and NOT protected by a password
+					fn (BaseBuilder $q) => $q
+						->whereNotNull(APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::IS_LINK_REQUIRED)
+						->whereNull(APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::PASSWORD)
+				)
+				->orWhere(
+					// Album is public/shared (visible or not) and protected by a password and unlocked
+					fn (BaseBuilder $q) => $q
+						->whereNotNull(APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::IS_LINK_REQUIRED)
+						->whereNotNull(APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::PASSWORD)
+						->whereIn(APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::BASE_ALBUM_ID, $unlocked_album_ids)
+				)
+				->when(
+					$user_id !== null,
+					// TODO: move the owner to ACCESS PERMISSIONS so that we do not need to join base_album anymore
+					// Current user is the owner of the album
+					fn (BaseBuilder $q) => $q->orWhere('base_albums.owner_id', '=', $user_id)
+				);
+
+			return $query;
+		} catch (\Throwable $e) {
+			throw new QueryBuilderException($e);
+		}
+	}
+
+	/**
+	 * Restricts an album query to _reachable_ albums.
+	 *
+	 * An album is called _reachable_, if it is _visible_ and _accessible_ simultaneously.
+	 * An album is reachable, if the user is able to see the album
+	 * within its parent album and has the privilege to enter it.
+	 *
+	 *
+	 * The combination of both sets of conditions yields that an album is
+	 * _reachable_, if any of the following conditions hold
+	 * (OR-clause)
+	 *
+	 *  - the user is the admin, or
+	 *  - the user is the owner, or
+	 *  - the album is shared with the user, or
+	 *  - the album does not require a direct link, is public and has no password set, or
+	 *  - the album does not require a direct link, is public and has been unlocked
+	 *
+	 * @param AlbumBuilder $query
+	 * @param User|null    $user               the current user, or null if not authenticated
+	 * @param string[]     $unlocked_album_ids array of unlocked album IDs
+	 *
+	 * @return AlbumBuilder
+	 *
+	 * @throws QueryBuilderException
+	 * @throws InvalidQueryModelException
+	 */
+	public function applyReachabilityFilter(AlbumBuilder $query, ?User $user, array $unlocked_album_ids): AlbumBuilder
+	{
+		$this->prepareModelQueryOrFail($query, $user);
+
+		if ($user?->may_administrate === true) {
+			return $query;
+		}
+
+		$user_id = $user?->id;
+
+		// We must wrap everything into an outer query to avoid any undesired
+		// effects in case that the original query already contains an
+		// "OR"-clause.
+		// The sub-query only uses properties (i.e. columns) which are
+		// defined on the common base model for all albums.
+		$reachability_sub_query = function (Builder $query2) use ($unlocked_album_ids, $user_id): void {
+			$query2
+				->where(
+					// Album is visible and not password protected.
+					fn (Builder $q) => $q
+						->where(APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::IS_LINK_REQUIRED, '=', false)
+						->whereNull(APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::PASSWORD)
+				)
+				->orWhere(
+					// Album is visible and password protected and unlocked
+					fn (Builder $q) => $q
+						->where(APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::IS_LINK_REQUIRED, '=', false)
+						->whereNotNull(APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::PASSWORD)
+						->whereIn(APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::BASE_ALBUM_ID, $unlocked_album_ids)
+				)
+				->when(
+					$user_id !== null,
+					// User is owner of the album
+					fn (Builder $q) => $q->orWhere('base_albums.owner_id', '=', $user_id)
+				);
+		};
+
+		return $query->where($reachability_sub_query);
+	}
+
+	/**
+	 * Restricts an album query to _browsable_ albums.
+	 *
+	 * Intuitively, an album is browsable if users can find a path to the
+	 * album by "clicking around".
+	 * An album is called _browsable_, if
+	 *
+	 *   1. there is a path from the origin to the album, and
+	 *   2. all albums on the path are _reachable_
+	 *
+	 * See {@link AlbumQueryPolicy::applyReachabilityFilter()}
+	 * for the definition of reachability.
+	 * Note, while _reachability_ (as well as _visibility_ and _accessibility_)
+	 * are a _local_ properties, _browsability_ is a _global_ property.
+	 *
+	 * **Attention**:
+	 * For efficiency reasons this method does not check if `$origin` itself
+	 * is reachable.
+	 * The method simply assumes that the user has already legitimately
+	 * accessed the origin album, if the caller provides an album model.
+	 *
+	 * Due to constraints in the SQL syntax, the query actually checks that
+	 *
+	 *   1. there is a path from the origin to the album, and
+	 *   2. no album on that path is unreachable
+	 *
+	 * Note that the worst case efficiency of this query is O(n²), if n is
+	 * the number of query results.
+	 * The query does not "know" that albums are organized in a tree structure
+	 * and thus re-examines the entire path for each album in the result and
+	 * does not take a short-cut for sub-paths which have already been examined
+	 * previously.
+	 * In other words for a flat tree (all result nodes are direct children
+	 * of the origin), the runtime is O(n), but for a high tree (the nodes are
+	 * basically a sequence), the runtime is O(n²).
+	 *
+	 * @param AlbumBuilder    $query              the album query which shall be restricted
+	 * @param User|null       $user               the current user, or null if not authenticated
+	 * @param string[]        $unlocked_album_ids array of unlocked album IDs
+	 * @param int|string|null $origin_left        left boundary
+	 * @param int|string|null $origin_right       right boundary
+	 *
+	 * @return AlbumBuilder the restricted album query
+	 *
+	 * @throws InternalLycheeException
+	 */
+	public function applyBrowsabilityFilter(AlbumBuilder $query, ?User $user, array $unlocked_album_ids, int|string|null $origin_left = null, int|string|null $origin_right = null): AlbumBuilder
+	{
+		if (gettype($origin_left) !== gettype($origin_right)) {
+			throw new LycheeInvalidArgumentException('$origin_left and $origin_right must simultaneously either be integers, strings or null');
+		}
+
+		$table = $query->getQuery()->from;
+		if (!($query->getModel() instanceof Album) || $table !== 'albums') {
+			throw new LycheeInvalidArgumentException('the given query does not query for albums');
+		}
+
+		if ($user?->may_administrate === true) {
+			return $query;
+		}
+
+		// Ensures that only those albums of the original query are
+		// returned for which a path from the origin to the album exist
+		// such that there are no blocked albums on the path to the album.
+		return $query->whereNotExists(fn (BaseBuilder $q) => $this->appendUnreachableAlbumsCondition($q, $origin_left, $origin_right, $user, $unlocked_album_ids));
+	}
+
+	/**
+	 * Restricts an album query to albums whose ancestors are all _reachable_.
+	 *
+	 * Combined with {@link AlbumQueryPolicy::applyVisibilityFilter()}, this
+	 * yields the albums a user can see by "clicking around" from the root:
+	 * like {@link AlbumQueryPolicy::applyBrowsabilityFilter()}, except that
+	 * the album itself is not required to be reachable, so a visible but
+	 * still-locked album is kept (the user can click it to unlock it).
+	 *
+	 * @param AlbumBuilder $query              the album query which shall be restricted
+	 * @param User|null    $user               the current user, or null if not authenticated
+	 * @param string[]     $unlocked_album_ids array of unlocked album IDs
+	 *
+	 * @return AlbumBuilder the restricted album query
+	 *
+	 * @throws InternalLycheeException
+	 */
+	public function applyAncestorReachabilityFilter(AlbumBuilder $query, ?User $user, array $unlocked_album_ids): AlbumBuilder
+	{
+		if ($user?->may_administrate === true) {
+			return $query;
+		}
+
+		return $query->whereNotExists(
+			fn (BaseBuilder $q) => $this->appendUnreachableAlbumsCondition($q, null, null, $user, $unlocked_album_ids)
+				// Strict ancestors only: exclude the album itself.
+				->whereColumn('inner._lft', '<', 'albums._lft')
+		);
+	}
+
+	/**
+	 * Adds the conditions of an unreachable album to the query.
+	 *
+	 * An album is called _unreachable_, if it is
+	 *   - _invisible_
+	 *   - or not _accessible_
+	 *
+	 * It is the opposite of "reachable", if the user is not able to see the album
+	 * within its parent album or does not have the privilege to enter it.
+	 *
+	 * **Attention:** This method is only meant for internal use by
+	 * this class or {@link PhotoQueryPolicy}.
+	 * Use {@link AlbumQueryPolicy::applyBrowsabilityFilter()}
+	 * if called from other places instead.
+	 *
+	 * This method adds the WHERE conditions without any further pre-cautions.
+	 * The method silently assumes that the passed query builder is used
+	 * within an outer query whose SELECT clause contains the table
+	 *
+	 *  - **`albums`**.
+	 *
+	 * Moreover, the raw clauses are added.
+	 * They are not wrapped into a nesting braces `()`.
+	 *
+	 * @param BaseBuilder     $builder            the album query which shall be restricted
+	 * @param int|string|null $origin_left        optionally constraints the search base;
+	 *                                            an integer value is interpreted a raw left bound of the search base;
+	 *                                            a string value is interpreted as a reference to a column which shall be used as a left bound
+	 * @param int|string|null $origin_right       like `$origin_left` but for the right bound
+	 * @param User|null       $user               the current user, or null if not authenticated
+	 * @param string[]        $unlocked_album_ids array of unlocked album IDs
+	 *
+	 * @return BaseBuilder
+	 *
+	 * @throws InternalLycheeException
+	 */
+	public function appendUnreachableAlbumsCondition(BaseBuilder $builder, int|string|null $origin_left, int|string|null $origin_right, ?User $user, array $unlocked_album_ids): BaseBuilder
+	{
+		if (gettype($origin_left) !== gettype($origin_right)) {
+			throw new LycheeInvalidArgumentException('$origin_left and $origin_right must simultaneously either be integers, strings or null');
+		}
+
+		$user_id = $user?->id;
+
+		try {
+			// There are inner albums ...
+			$builder
+				->from('albums', 'inner')
+				->when(
+					$user !== null,
+					fn ($q) => $this->joinBaseAlbumOwnerId($q, 'inner.id', 'inner_', false)
+				);
+
+			// WE MUST JOIN LEFT HERE
+			$this->joinSubComputedAccessPermissions($builder, 'inner.id', 'left', 'inner_', false, $user);
+
+			// ... on the path from the origin ...
+			if (is_int($origin_left)) {
+				// (We must exclude the origin as an inner node
+				// because the origin might have set "require_link", but
+				// we do not care, because the user has already got
+				// somehow into the origin)
+				$builder
+					->where('inner._lft', '>', $origin_left)
+					->where('inner._rgt', '<', $origin_right);
+			} elseif (is_string($origin_left) && is_string($origin_right)) {
+				$builder
+					->whereColumn('inner._lft', '>', $origin_left)
+					->whereColumn('inner._rgt', '<', $origin_right);
+			}
+			// ... to the target ...
+			$builder
+				// (We must include the target into the list of inner nodes,
+				// because we must also check whether the target is unreachable.)
+				->whereColumn('inner._lft', '<=', 'albums._lft')
+				->whereColumn('inner._rgt', '>=', 'albums._rgt');
+			// ... which are unreachable.
+
+			/**
+			 *                        | Link required <> false | Password required = true
+			 * -----------------------+------------------------+--------------------------
+			 * Link required <> false | Not reachable ✓        | Not reachable ✓
+			 * Id not Unlocked        | Not reachable ✓        | Not reachable ✓.
+			 */
+			$builder
+				->where(
+					fn (BaseBuilder $q) => $q
+						->where('inner_' . APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::IS_LINK_REQUIRED, '=', true)
+						->orWhereNull('inner_' . APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::IS_LINK_REQUIRED)
+						->orWhereNotNull('inner_' . APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::PASSWORD)
+				)
+				->where(
+					fn (BaseBuilder $q) => $q
+						->where('inner_' . APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::IS_LINK_REQUIRED, '=', true)
+						->orWhereNull('inner_' . APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::IS_LINK_REQUIRED)
+						->orWhereNotIn('inner_' . APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::BASE_ALBUM_ID, $unlocked_album_ids)
+				)
+				->when(
+					$user_id !== null,
+					fn (BaseBuilder $q) => $q
+						->where('inner_base_albums.owner_id', '<>', $user_id)
+				);
+
+			return $builder;
+		} catch (\InvalidArgumentException $e) {
+			throw new QueryBuilderException($e);
+		}
+	}
+
+	/**
+	 * Adds the conditions of a sensitive album by recursion to the query.
+	 *
+	 * An album is called _recursive sensitive_, if it is marked as sensitive or contains a sensitive parent.
+	 *
+	 * **Attention:** This method is only meant for internal use by
+	 * this class or {@link PhotoQueryPolicy}.
+	 *
+	 * This method adds the WHERE conditions without any further pre-cautions.
+	 * The method silently assumes that the passed query builder is used
+	 * within an outer query whose SELECT clause contains the table
+	 *
+	 *  - **`albums`**.
+	 *
+	 * Moreover, the raw clauses are added.
+	 * They are not wrapped into a nesting braces `()`.
+	 *
+	 * @param BaseBuilder     $builder      the album query which shall be restricted
+	 * @param int|string|null $origin_left  optionally constrains the search base;
+	 *                                      an integer value is interpreted a raw left bound of the search base;
+	 *                                      a string value is interpreted as a reference to a column which shall be used as a left bound
+	 * @param int|string|null $origin_right like `$origin_left` but for the right bound
+	 *
+	 * @return BaseBuilder
+	 *
+	 * @throws InternalLycheeException
+	 */
+	public function appendRecursiveSensitiveAlbumsCondition(BaseBuilder $builder, int|string|null $origin_left, int|string|null $origin_right): BaseBuilder
+	{
+		if (gettype($origin_left) !== gettype($origin_right)) {
+			throw new LycheeInvalidArgumentException('$origin_left and $origin_right must simultaneously either be integers, strings or null');
+		}
+
+		try {
+			// There are outers albums ...
+			// WE MUST JOIN LEFT HERE
+			$builder->from('albums', 'outers');
+			$this->joinBaseAlbumSensitive($builder, 'outers.id', 'outers_');
+
+			// ... on the path from the origin ...
+			if (is_int($origin_left)) {
+				// (We must exclude the origin as an outer node
+				// because the origin might have set as is_nsfw, but
+				// we do not care, because the user has already got
+				// somehow into the origin)
+				$builder
+					->where('outers._lft', '>', $origin_left)
+					->where('outers._rgt', '<', $origin_right);
+			} elseif (is_string($origin_left) && is_string($origin_right)) {
+				$builder
+					->whereColumn('outers._lft', '>', $origin_left)
+					->whereColumn('outers._rgt', '<', $origin_right);
+			}
+
+			// ... to the target ...
+			$builder
+				// (We must include the target into the list of outer nodes,
+				// because we must also check whether the target is nsfw.)
+				->whereColumn('outers._lft', '<=', 'albums._lft')
+				->whereColumn('outers._rgt', '>=', 'albums._rgt');
+			// ... which are sensitive.
+
+			$builder->where('outers_base_albums.is_nsfw', '=', true);
+
+			return $builder;
+		} catch (\InvalidArgumentException $e) {
+			throw new QueryBuilderException($e);
+		}
+	}
+
+	/**
+	 * Throws an exception if the given query does not query for an album.
+	 *
+	 * @param AlbumBuilder|FixedQueryBuilder<TagAlbum>|FixedQueryBuilder<Album> $query
+	 * @param User|null                                                         $user  the current user, or null if not authenticated
+	 *
+	 * @throws QueryBuilderException
+	 * @throws InvalidQueryModelException
+	 */
+	private function prepareModelQueryOrFail(AlbumBuilder|FixedQueryBuilder $query, ?User $user): void
+	{
+		$model = $query->getModel();
+		$table = $query->getQuery()->from;
+		if (
+			!($model instanceof Album ||
+				$model instanceof TagAlbum ||
+				$model instanceof PersonAlbum ||
+				$model instanceof BaseAlbumImpl
+			) ||
+			$table !== $model->getTable()
+		) {
+			throw new InvalidQueryModelException('album');
+		}
+
+		// Ensure that only columns of the targeted model are selected,
+		// if no specific columns are yet set.
+		// Otherwise, we cannot add a JOIN clause below
+		// without accidentally adding all columns of the join, too.
+		$base_query = $query->getQuery();
+		if ($base_query->columns === null || count($base_query->columns) === 0) {
+			$query->select([$table . '.*']);
+		}
+
+		// We MUST do a full join because we are also sorting on created_at, title and description.
+		// Those are stored in the base_albums.
+		if ($model instanceof Album || $model instanceof TagAlbum || $model instanceof PersonAlbum) {
+			$this->joinBaseAlbumOwnerId($query, $table . '.id');
+		}
+
+		// We MUST use left here because otherwise we are preventing any non shared album to be visible
+		$this->joinSubComputedAccessPermissions($query, $table . '.id', 'left', '', false, $user);
+	}
+
+	/**
+	 * Generate the computed property for the possibly logged-in user.
+	 *
+	 * This produces a sub table with base_album_id where we compute:
+	 * - base_album_id so that we can link those computed property to the base_album table.
+	 * - is_link_required => MIN as we want to ensure that a logged in user can see the shared album
+	 * - grants_full_photo_access => MAX as the public setting takes priority
+	 * - grants_download => MAX as the public setting takes priority
+	 * - grants_upload => MAX as the shared setting takes priority
+	 * - grants_edit => MAX as the shared setting takes priority
+	 * - grants_delete => MAX as the shared setting takes priority
+	 * - grants_move => MAX as the shared setting takes priority
+	 *
+	 * @param bool      $full whether to select full columns
+	 * @param User|null $user the current user, or null if not authenticated
+	 *
+	 * @return BaseBuilder
+	 */
+	private function getComputedAccessPermissionSubQuery(bool $full = false, ?User $user = null): BaseBuilder
+	{
+		$select = [
+			APC::BASE_ALBUM_ID,
+			APC::IS_LINK_REQUIRED,
+			APC::PASSWORD,
+		];
+
+		if ($full) {
+			$select[] = APC::GRANTS_DELETE;
+			$select[] = APC::GRANTS_MOVE;
+			$select[] = APC::GRANTS_EDIT;
+			$select[] = APC::GRANTS_DOWNLOAD;
+			$select[] = APC::GRANTS_FULL_PHOTO_ACCESS;
+			$select[] = APC::GRANTS_UPLOAD;
+			$select[] = APC::USER_ID;
+		}
+		if ($user === null) {
+			return DB::table('access_permissions', APC::COMPUTED_ACCESS_PERMISSIONS)->select($select)->whereNull(APC::USER_ID)->whereNull(APC::USER_GROUP_ID);
+		}
+
+		// Collect the user groups of the current user.
+		/** @var int[] $user_groups */
+		$user_groups = $user->user_groups->map(fn ($g) => $g->id)->all();
+
+		return DB::table('access_permissions', APC::COMPUTED_ACCESS_PERMISSIONS)
+			->select($select)
+			// First select the permissions based on the user.
+			->where(APC::USER_ID, '=', $user->id)
+			// Then select the permissions based on the user groups.
+			->orWhere(
+				fn ($q2) => $q2->whereIn(
+					APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::USER_GROUP_ID,
+					$user_groups
+				)
+					// and ensure that we already have not selected the user permissions.
+					// This is important to avoid selecting the user permissions twice.
+					->whereNotIn(
+						APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::BASE_ALBUM_ID,
+						fn ($q3) => $q3->select('acc_per.' . APC::BASE_ALBUM_ID)
+							->from('access_permissions', 'acc_per')
+							->where('acc_per.' . APC::USER_ID, '=', $user->id)
+					)
+			)
+			// Then select the public permissions.
+			->orWhere(
+				fn ($q2) => $q2->whereNull(APC::USER_ID)->whereNull(APC::USER_GROUP_ID)
+					->whereNotIn(
+						APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::BASE_ALBUM_ID,
+						// Ensure that we already have not selected the user or group permissions.
+						fn ($q3) => $q3->select('acc_per_group.' . APC::BASE_ALBUM_ID)
+							->from('access_permissions', 'acc_per_group')
+							->where('acc_per_group.' . APC::USER_ID, '=', $user->id)
+							->orWhereIn(
+								'acc_per_group.' . APC::USER_GROUP_ID,
+								$user_groups
+							)
+					)
+			)->when(!$full, fn (BaseBuilder $q) => $q->groupBy(APC::BASE_ALBUM_ID, APC::IS_LINK_REQUIRED, APC::PASSWORD));
+	}
+
+	/**
+	 * Restricts an album query to albums the user may edit.
+	 *
+	 * SQL equivalent of {@link AlbumPolicy::canEdit()} for regular albums:
+	 *  - the user is an admin, or
+	 *  - the user owns the album and has the upload privilege, or
+	 *  - a user, group or public permission on the album grants edit.
+	 *
+	 * Only sub-queries on `albums.id` are used, so the condition does not
+	 * depend on which joins the calling query already carries.
+	 *
+	 * @param AlbumBuilder|BaseBuilder $query
+	 * @param User|null                $user
+	 */
+	public function appendEditableCondition(AlbumBuilder|BaseBuilder $query, ?User $user): void
+	{
+		if ($user?->may_administrate === true) {
+			return;
+		}
+
+		if ($user === null) {
+			$query->whereRaw('1 = 0');
+
+			return;
+		}
+
+		$query->where(fn ($q) => $q
+			->when(
+				$user->may_upload,
+				fn ($q1) => $q1->orWhereIn('albums.id', fn ($q2) => $q2->select('id')->from('base_albums')->where('owner_id', '=', $user->id))
+			)
+			->orWhereExists(fn ($q3) => $this->editGrantQuery($q3, $user, 'albums.id'))
+		);
+	}
+
+	/**
+	 * Fills $query with the `access_permissions` rows granting edit on the
+	 * album in column $album_id_column to $user: their own rows, their
+	 * groups' rows, and the public row.
+	 *
+	 * @param BaseBuilder $query
+	 * @param User        $user
+	 * @param string      $album_id_column
+	 */
+	public function editGrantQuery(BaseBuilder $query, User $user, string $album_id_column): BaseBuilder
+	{
+		/** @var int[] $user_groups */
+		$user_groups = $user->user_groups->map(fn ($g) => $g->id)->all();
+
+		return $query
+			->from(APC::ACCESS_PERMISSIONS, 'edit_perm')
+			->selectRaw('1')
+			->whereColumn('edit_perm.' . APC::BASE_ALBUM_ID, '=', $album_id_column)
+			->where('edit_perm.' . APC::GRANTS_EDIT, '=', true)
+			->where(fn ($q) => $q
+				->where('edit_perm.' . APC::USER_ID, '=', $user->id)
+				->orWhereIn('edit_perm.' . APC::USER_GROUP_ID, $user_groups)
+				->orWhere(fn ($q2) => $q2->whereNull('edit_perm.' . APC::USER_ID)->whereNull('edit_perm.' . APC::USER_GROUP_ID))
+			);
+	}
+
+	/**
+	 * Helper to join the the computed property for the possibly logged-in user.
+	 *
+	 * @param AlbumBuilder|FixedQueryBuilder<TagAlbum>|FixedQueryBuilder<Album>|FixedQueryBuilder<\App\Models\Photo>|BaseBuilder $query  query to join to
+	 * @param string                                                                                                             $second id to link with
+	 * @param string                                                                                                             $type   left|inner
+	 * @param string                                                                                                             $prefix prefix in the future queries
+	 * @param bool                                                                                                               $full   Select most columns instead of just restricted
+	 * @param User|null                                                                                                          $user   the current user, or null if not authenticated
+	 *
+	 * @return void
+	 *
+	 * @throws \InvalidArgumentException
+	 */
+	public function joinSubComputedAccessPermissions(
+		AlbumBuilder|FixedQueryBuilder|BaseBuilder $query,
+		string $second = 'base_albums.id',
+		string $type = 'left',
+		string $prefix = '',
+		bool $full = false,
+		?User $user = null,
+	): void {
+		$query->joinSub(
+			query: $this->getComputedAccessPermissionSubQuery($full, $user),
+			as: $prefix . APC::COMPUTED_ACCESS_PERMISSIONS,
+			first: $prefix . APC::COMPUTED_ACCESS_PERMISSIONS . '.' . APC::BASE_ALBUM_ID,
+			operator: '=',
+			second: $second,
+			type: $type
+		);
+	}
+
+	/**
+	 * Join BaseAlbum for ownership and more.
+	 * This aim to give lighter sub selection to make the queries run faster.
+	 *
+	 * @param AlbumBuilder|FixedQueryBuilder<TagAlbum>|FixedQueryBuilder<Album>|BaseBuilder $query
+	 * @param string                                                                        $second
+	 * @param string                                                                        $prefix
+	 * @param bool                                                                          $full
+	 *
+	 * @return void
+	 *
+	 * @throws \InvalidArgumentException
+	 */
+	public function joinBaseAlbumOwnerId(
+		AlbumBuilder|FixedQueryBuilder|BaseBuilder $query,
+		string $second = 'inner.id',
+		string $prefix = '',
+		bool $full = true,
+	): void {
+		$columns = [
+			$prefix . 'base_albums.id',
+			$prefix . 'base_albums.owner_id',
+		];
+
+		if ($full) {
+			$columns[] = $prefix . 'base_albums.title';
+			$columns[] = $prefix . 'base_albums.title_base';
+			$columns[] = $prefix . 'base_albums.title_index';
+			$columns[] = $prefix . 'base_albums.created_at';
+			$columns[] = $prefix . 'base_albums.description';
+			$columns[] = $prefix . 'base_albums.published_at';
+			// Feature 068: `published_at`'s timezone companion column — needed
+			// to correctly re-derive the original recorded timezone for a raw
+			// (non-Eloquent-hydrated) `published_at` value, the same way
+			// `DateTimeWithTimezoneCast::get()` does for a fully-hydrated model.
+			$columns[] = $prefix . 'base_albums.published_at_orig_tz';
+			// The children-data endpoint needs is_nsfw off this same already-necessary join
+			// (applyVisibilityFilter() always joins base_albums via this method) — adding it here
+			// avoids that endpoint needing a second, otherwise-redundant join.
+			$columns[] = $prefix . 'base_albums.is_nsfw';
+			// Same reasoning, for is_pinned.
+			$columns[] = $prefix . 'base_albums.is_pinned';
+		}
+
+		$query->joinSub(
+			query: DB::table('base_albums', $prefix . 'base_albums')
+				->select($columns),
+			as: $prefix . 'base_albums',
+			first: $prefix . 'base_albums.id',
+			operator: '=',
+			second: $second,
+			type: 'left'
+		);
+	}
+
+	/**
+	 * Join BaseAlbum for the field set the Bulk Album Edit admin page (and
+	 * Feature 057's `for_bulk_edit=true` v3 listing mode) needs beyond what
+	 * {@see self::joinBaseAlbumOwnerId()} already carries.
+	 * This aim to give lighter sub selection to make the queries run faster.
+	 *
+	 * **Attention:** `$prefix` must be non-empty (and distinct from any other
+	 * join's prefix already present on the query) to avoid a SQL alias
+	 * collision with the policy's own default `base_albums` join
+	 * ({@see self::joinBaseAlbumOwnerId()}, prefix `''`) that
+	 * {@see self::applyVisibilityFilter()} always adds.
+	 *
+	 * @param AlbumBuilder|FixedQueryBuilder<TagAlbum>|FixedQueryBuilder<Album>|BaseBuilder $query
+	 * @param string                                                                        $second
+	 * @param string                                                                        $prefix
+	 *
+	 * @return void
+	 *
+	 * @throws \InvalidArgumentException
+	 */
+	public function joinBaseAlbumBulkEditFields(
+		AlbumBuilder|FixedQueryBuilder|BaseBuilder $query,
+		string $second = 'inner.id',
+		string $prefix = '',
+	): void {
+		$columns = [
+			$prefix . 'base_albums.id',
+			$prefix . 'base_albums.copyright',
+			$prefix . 'base_albums.photo_layout',
+			$prefix . 'base_albums.sorting_col',
+			$prefix . 'base_albums.sorting_order',
+			$prefix . 'base_albums.photo_timeline',
+		];
+
+		$query->joinSub(
+			query: DB::table('base_albums', $prefix . 'base_albums')
+				->select($columns),
+			as: $prefix . 'base_albums',
+			first: $prefix . 'base_albums.id',
+			operator: '=',
+			second: $second,
+			type: 'left'
+		);
+	}
+
+	/**
+	 * Join BaseAlbum for sensitivity only.
+	 * This aim to give lighter sub selection to make the queries run faster.
+	 *
+	 * @param AlbumBuilder|FixedQueryBuilder<TagAlbum>|FixedQueryBuilder<Album>|BaseBuilder $query
+	 * @param string                                                                        $second
+	 * @param string                                                                        $prefix
+	 *
+	 * @return void
+	 *
+	 * @throws \InvalidArgumentException
+	 */
+	public function joinBaseAlbumSensitive(
+		AlbumBuilder|FixedQueryBuilder|BaseBuilder $query,
+		string $second = 'inner.id',
+		string $prefix = '',
+	): void {
+		$columns = [
+			$prefix . 'base_albums.id',
+			$prefix . 'base_albums.is_nsfw',
+		];
+
+		$query->joinSub(
+			query: DB::table('base_albums', $prefix . 'base_albums')
+				->select($columns),
+			as: $prefix . 'base_albums',
+			first: $prefix . 'base_albums.id',
+			operator: '=',
+			second: $second,
+			type: 'left'
+		);
+	}
+}

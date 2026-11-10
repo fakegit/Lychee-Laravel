@@ -1,0 +1,90 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+return [
+    'title' => 'Beheerdersdashboard',
+    'overview' => 'Overzicht',
+    'tools' => 'Hulpmiddelen',
+    'tool_groups' => [
+        'core' => 'Beheer',
+        'monitoring' => 'Monitoring',
+        'extensions' => 'Uitbreidingen',
+    ],
+    'refresh' => 'Vernieuwen',
+    'metrics' => [
+        'photos_count' => 'Foto\'s',
+        'albums_count' => 'Albums',
+        'users_count' => 'Gebruikers',
+        'storage_bytes' => 'Gebruikte opslag',
+        'queued_jobs' => 'Taken in wachtrij',
+        'failed_jobs_24h' => 'Mislukte taken (24u)',
+        'last_successful_job_at' => 'Laatst geslaagde taak',
+    ],
+    'errors' => [
+        'partial' => 'Sommige gegevens konden niet worden geladen.',
+    ],
+    'security' => [
+        'title' => 'Beveiligingsadviezen',
+        'description' => 'De volgende kwetsbaarheden zijn van invloed op uw huidige Lychee-versie. Werk zo snel mogelijk bij.',
+        'no_cvss' => '(geen CVSS-score)',
+    ],
+    'update' => [
+        'title' => 'Updatestatus',
+        'update_available' => 'Er is een nieuwere versie beschikbaar (huidig: :current, nieuwste: :latest).',
+        'git_update_available' => 'Uw installatie loopt :count commits achter op master.',
+    ],
+    'nsfw_config' => [
+        'title' => 'NSFW-detectie en moderatie',
+        'tab_settings' => 'Instellingen',
+        'tab_presets' => 'Voorinstellingen',
+        'description' => 'Configureer geautomatiseerde NSFW-detectie voor geüploade foto\'s. Foto\'s worden asynchroon gescand via de externe classificatieservice.',
+        'enable' => 'NSFW-classificatie inschakelen',
+        'preset' => 'Detectievoorinstelling',
+        'scan_trusted' => 'Vertrouwde gebruikers scannen',
+        'section_general' => 'Algemeen',
+        'section_actions' => 'Acties',
+        'actions_explanation' => 'Bepaal per vertrouwensniveau wat er gebeurt wanneer een <b>Blokkeren</b>-bevinding wordt gedetecteerd. <b>Beoordelen</b>-bevindingen worden voor gebruikers met niveau Controle en Monitor altijd naar moderatie gestuurd en worden voor gebruikers met niveau Vertrouwen-maar-verifiëren en Vertrouwd automatisch goedgekeurd.',
+        'sensitive_explanation' => '<b>Gevoelige</b> bevindingen voor gebruikers met niveau Controle worden altijd naar moderatie gestuurd. Voor de andere vertrouwensniveaus bepalen onderstaande instellingen of het album van de foto als gevoelig wordt gemarkeerd en wat er gebeurt wanneer de foto geen album heeft.',
+        'sensitive_album' => 'Gevoelig: actie voor album',
+        'sensitive_no_album' => 'Gevoelig: alternatief zonder album',
+        'section_hide_on_scan' => 'Verbergen tijdens scan',
+        'hide_on_scan_explanation' => 'Kies per vertrouwensniveau of foto\'s tijdelijk verborgen moeten worden terwijl de NSFW-scan wordt uitgevoerd. Dit voorkomt dat mogelijk problematische inhoud zichtbaar is voordat de scan is voltooid.',
+        'hide_on_scan_warning' => 'Indien ingeschakeld, worden foto\'s verborgen (in de moderatiewachtrij geplaatst) terwijl de NSFW-scan wordt uitgevoerd.<br> Als de NSFW-classifier vastloopt of niet beschikbaar is, blijft de foto verborgen totdat deze handmatig door een beheerder wordt goedgekeurd.',
+        'hide_monitor' => 'Foto\'s van gemonitorde gebruikers verbergen tijdens scan',
+        'hide_tbv' => 'Foto\'s van vertrouwde maar well te controleren gebruikers verbergen tijdens scan',
+        'hide_trusted' => 'Foto\'s van vertrouwde gebruikers verbergen tijdens scan',
+        'section_matrix' => 'Matrix van vertrouwensniveau × bevinding',
+        'matrix_explanation' => 'Elke geüploade foto wordt gescand door de NSFW-classifier, die bevindingen retourneert in drie ernstniveaus: <b>Blokkeren</b> (expliciete inhoud), <b>Beoordelen</b> (twijfelachtige inhoud) en <b>Gevoelig</b> (milde inhoud). De actie die voor elke bevinding wordt ondernomen, hangt af van het vertrouwensniveau van de uploader. Deze tabel geeft een samenvatting van de huidige configuratie.',
+        'matrix_trust_level' => 'Vertrouwensniveau',
+        'matrix_check' => 'Controle',
+        'matrix_monitor' => 'Monitor',
+        'matrix_tbv' => 'Vertrouwen maar well controleren',
+        'matrix_trusted' => 'Vertrouwd',
+        'runtime_config' => 'Runtimeconfiguratie service',
+        'presets' => 'Beschikbare voorinstellingen',
+        'key' => 'Sleutel',
+        'value' => 'Waarde',
+        'active' => 'Actief',
+        'block' => 'Blokkeren',
+        'review' => 'Beoordelen',
+        'sensitive' => 'Gevoelig',
+        'none' => 'Geen',
+        'matrix_moderate' => 'Modereren',
+        'matrix_approve' => 'Goedkeuren',
+        'matrix_mark_album' => 'Album markeren',
+        'matrix_nothing' => 'Niets',
+        'legend_block' => 'Foto wordt permanent verwijderd.',
+        'legend_moderate' => 'Foto wordt vastgehouden voor beoordeling door een beheerder.',
+        'legend_approve' => 'Foto wordt geaccepteerd, bevinding wordt vastgelegd.',
+        'legend_mark_album' => 'Het album van de foto wordt als gevoelig gemarkeerd.',
+        'legend_nothing' => 'Geen actie ondernomen.',
+    ],
+    'nsfw_findings' => [
+        'title' => 'NSFW-bevindingen',
+    ],
+];

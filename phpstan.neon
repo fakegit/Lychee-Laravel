@@ -1,0 +1,43 @@
+includes:
+	- vendor/larastan/larastan/extension.neon
+	- vendor/lychee-org/phpstan-lychee/phpstan.neon
+	- vendor/lychee-org/phpstan-sensitive-parameter-values/extension.neon
+	- phpstan-baseline.neon
+
+parameters:
+	level: 3
+	treatPhpDocTypesAsCertain: false
+	checkOctaneCompatibility: true
+	sensitiveParameter:
+		keywords: ['apiKey', 'auth', 'bearer', 'card', 'ccv', 'credential', 'credit', 'csrf', 'cvv', 'hash', 'nonce', 'otp', 'passcode', 'password', 'private', 'salt', 'secret', 'signature', 'ssn']
+	paths:
+		- app
+		- config
+		- lang
+		- database/factories
+		- database/migrations
+		- scripts
+	excludePaths:
+		- app/Services/Archives # This is creating errors depending if version 2.1 or 3.1 is installed...
+	stubFiles:
+		- phpstan/stubs/imageexception.stub
+		- phpstan/stubs/image.stub
+	ignoreErrors:
+		-
+			message: '#Cast to bool is forbidden.#'
+			paths:
+				- config
+		- '#Dynamic call to static method Illuminate\\.*#'
+		- '#Dynamic call to static method App\\Models\\Builders.*#'
+		- '#Dynamic call to static method App\\Eloquent\\FixedQueryBuilder.*#'
+		- '#Call to an undefined method Illuminate\\Database\\Schema\\ForeignKeyDefinition::after\(\).#'
+		- '#.*stdClass>#'
+		- '#.*contravariant.*#'
+		-
+			message: '#Dynamic call to static method App\\Http\\Requests\\.*::verify\(\)\.#'
+		-
+			message: '#Dynamic call to static method App\\Http\\Requests\\.*::configs\(\)\.#'
+		-
+			message: '#Parameter \$authed_user_id in App\\Actions\\Oauth\\Oauth::saveOauth#'
+		-
+			message: '#Parameter \$authors in App\\Http\\Controllers\\Gallery\\EmbedController#'

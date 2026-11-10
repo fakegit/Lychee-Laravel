@@ -1,0 +1,57 @@
+<?php
+
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | Moderation page
+    |--------------------------------------------------------------------------
+    */
+    'title' => 'Moderovanie',
+    'description' => 'Skontrolujte a schváľte fotografie nahrané používateľmi s úrovňou dôvery "check" predtým, ako budú verejne viditeľné.',
+    'approve_selected' => 'Schváliť vybrané',
+    'delete_selected' => 'Odstrániť vybrané',
+    'selected' => 'vybrané',
+    'no_pending' => 'Žiadne fotografie nečakajú na moderovanie.',
+    'approved' => 'Fotografie boli úspešne schválené.',
+    'col_thumbnail' => 'Miniatúra',
+    'col_title' => 'Názov',
+    'col_owner' => 'Vlastník',
+    'col_album' => 'Album',
+    'col_uploaded' => 'Nahrané',
+    'col_nsfw' => 'NSFW',
+    'nsfw_review' => 'Kontrola NSFW',
+    'overlay_confidence' => 'Spoľahlivosť: :value%',
+    'overlay_area' => 'Plocha: :value',
+    'overlay_mode_all' => 'NSFW: Všetko',
+    'overlay_mode_block' => 'NSFW: Blokovať',
+    'overlay_mode_review' => 'NSFW: Kontrola',
+    'overlay_mode_sensitive' => 'NSFW: Citlivé',
+    // Feature 089: moderation history and NSFW findings review.
+    'tab_pending' => 'Čakajúce',
+    'tab_history' => 'História',
+    'no_history' => 'Žiadna história moderovania.',
+    'col_photo' => 'Fotografia',
+    'col_event' => 'Udalosť',
+    'col_by' => 'Kto',
+    'col_date' => 'Dátum',
+    'event_held' => 'Zadržané',
+    'event_approved' => 'Schválené',
+    'source_upload' => 'Nahratie',
+    'source_nsfw_scan' => 'NSFW sken',
+    'history_title' => 'Moderovanie',
+    'history_show_all' => 'Zobraziť všetko (:count)',
+    'findings_title' => 'NSFW nálezy',
+    'findings_description' => 'Skontrolujte NSFW nálezy a zamietnite tie nesprávne. Zamietnuté nálezy sa odstránia; nový sken ich môže znova nájsť.',
+    'findings_empty' => 'Žiadne NSFW nálezy.',
+    'findings_col_status' => 'Stav',
+    'findings_col_findings' => 'Nálezy',
+    'findings_col_albums' => 'Albumy',
+    'findings_hidden' => 'Skryté',
+    'findings_dismiss' => 'Zamietnuť',
+    'findings_dismiss_all' => 'Zamietnuť všetky nálezy tejto fotografie',
+    'findings_dismiss_selected' => 'Zamietnuť vybrané',
+    'findings_confirm_header' => 'Zamietnuť nálezy',
+    'findings_confirm' => 'Zamietnuť všetky nálezy :count fotografií? Budú odstránené.',
+    'findings_dismissed' => 'Nálezy boli zamietnuté.',
+    'findings_error' => 'NSFW nálezy sa nepodarilo načítať ani zmeniť.',
+];

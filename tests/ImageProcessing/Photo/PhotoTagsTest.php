@@ -1,0 +1,217 @@
+<?php
+
+/**
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2017-2018 Tobias Reich
+ * Copyright (c) 2018-2026 LycheeOrg.
+ */
+
+/**
+ * We don't care for unhandled exceptions in tests.
+ * It is the nature of a test to throw an exception.
+ * Without this suppression we had 100+ Linter warning in this file which
+ * don't help anything.
+ *
+ * @noinspection PhpDocMissingThrowsInspection
+ * @noinspection PhpUnhandledExceptionInspection
+ */
+
+namespace Tests\ImageProcessing\Photo;
+
+use App\Jobs\EmbedMetadataJob;
+use App\Models\Configs;
+use Illuminate\Support\Facades\Bus;
+use Tests\Feature_v2\Base\BaseApiWithDataTest;
+
+class PhotoTagsTest extends BaseApiWithDataTest
+{
+	public function testTagsPhotoUnauthorizedForbidden(): void
+	{
+		$response = $this->patchJson('Photo::tags', []);
+		$this->assertUnprocessable($response);
+
+		$response = $this->patchJson('Photo::tags', [
+			'photo_ids' => [$this->photo1->id],
+			'tags' => ['tag1'],
+			'shall_override' => true,
+		]);
+		$this->assertUnauthorized($response);
+
+		$response = $this->actingAs($this->userNoUpload)->patchJson('Photo::tags', [
+			'photo_ids' => [$this->photo1->id],
+			'tags' => ['tag1'],
+			'shall_override' => true,
+		]);
+		$this->assertForbidden($response);
+	}
+
+	public function testTagsPhotoAuthorizedOwner(): void
+	{
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo::tags', [
+			'photo_ids' => [$this->photo1->id],
+			'tags' => ['tag1'],
+			'shall_override' => true,
+		]);
+		$this->assertNoContent($response);
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => $this->album1->id]);
+		$this->assertOk($response);
+		$response->assertJson([
+			'photos' => [
+				[
+					'id' => $this->photo1->id,
+					'tags' => [['name' => 'tag1']],
+				],
+			],
+		]);
+	}
+
+	public function testTagsPhotoAuthorizedOwnerKeepUniqueness(): void
+	{
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo::tags', [
+			'photo_ids' => [$this->photo1->id],
+			'tags' => ['tag1'],
+			'shall_override' => true,
+		]);
+		$this->assertNoContent($response);
+
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo::tags', [
+			'photo_ids' => [$this->photo1->id],
+			'tags' => ['tag1'],
+			'shall_override' => false,
+		]);
+
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => $this->album1->id]);
+		$this->assertOk($response);
+		$response->assertJson([
+			'photos' => [
+				[
+					'id' => $this->photo1->id,
+					'tags' => [['name' => 'tag1']],
+				],
+			],
+		]);
+	}
+
+	public function testTagsPhotoAuthorizedOwnerPreserveNoOverride(): void
+	{
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo::tags', [
+			'photo_ids' => [$this->photo1->id],
+			'tags' => ['tag1', 'tag2'],
+			'shall_override' => true,
+		]);
+		$this->assertNoContent($response);
+
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo::tags', [
+			'photo_ids' => [$this->photo1->id],
+			'tags' => ['tag1'],
+			'shall_override' => false,
+		]);
+
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => $this->album1->id]);
+		$this->assertOk($response);
+		$response->assertJson([
+			'photos' => [
+				[
+					'id' => $this->photo1->id,
+					'tags' => [['name' => 'tag1'], ['name' => 'tag2']],
+				],
+			],
+		]);
+	}
+
+	public function testTagsPhotoAuthorizedOwnerExtendNoOverride(): void
+	{
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo::tags', [
+			'photo_ids' => [$this->photo1->id],
+			'tags' => ['tag1'],
+			'shall_override' => true,
+		]);
+		$this->assertNoContent($response);
+
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo::tags', [
+			'photo_ids' => [$this->photo1->id],
+			'tags' => ['tag2'],
+			'shall_override' => false,
+		]);
+
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => $this->album1->id]);
+		$this->assertOk($response);
+		$response->assertJson([
+			'photos' => [
+				[
+					'id' => $this->photo1->id,
+				],
+			],
+		]);
+		$sorted_tags = array_column($response->json('photos.0.tags'), 'name');
+		sort($sorted_tags);
+		$this->assertEquals(['tag1', 'tag2'], $sorted_tags);
+	}
+
+	/**
+	 * Feature 059 (NFR-059-02): with the config at its default (off),
+	 * setting tags never dispatches EmbedMetadataJob.
+	 */
+	public function testTagsDoesNotDispatchEmbedJobWhenConfigDisabled(): void
+	{
+		// Explicit, not relying on the migration default: config state is
+		// not transaction-rolled-back between tests in this suite.
+		Configs::set('embed_metadata_in_files_enabled', false);
+		Bus::fake([EmbedMetadataJob::class]);
+
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo::tags', [
+			'photo_ids' => [$this->photo1->id],
+			'tags' => ['tag1'],
+			'shall_override' => true,
+		]);
+		$this->assertNoContent($response);
+
+		Bus::assertNotDispatched(EmbedMetadataJob::class);
+	}
+
+	/**
+	 * Feature 059 (FR-059-04): with the config enabled, setting tags
+	 * dispatches EmbedMetadataJob once per affected photo.
+	 */
+	public function testTagsDispatchesEmbedJobPerPhotoWhenConfigEnabled(): void
+	{
+		Configs::set('embed_metadata_in_files_enabled', true);
+		Bus::fake([EmbedMetadataJob::class]);
+
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo::tags', [
+			'photo_ids' => [$this->photo1->id, $this->photo1b->id],
+			'tags' => ['tag1'],
+			'shall_override' => true,
+		]);
+		$this->assertNoContent($response);
+
+		Bus::assertDispatchedTimes(EmbedMetadataJob::class, 2);
+	}
+
+	public function testTagsPhotoAuthorizedOwnerOverride(): void
+	{
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo::tags', [
+			'photo_ids' => [$this->photo1->id],
+			'tags' => ['tag1', 'tag2'],
+			'shall_override' => true,
+		]);
+		$this->assertNoContent($response);
+
+		$response = $this->actingAs($this->userMayUpload1)->patchJson('Photo::tags', [
+			'photo_ids' => [$this->photo1->id],
+			'tags' => ['tag3'],
+			'shall_override' => true,
+		]);
+
+		$response = $this->getJsonWithData('Album::photos', ['album_id' => $this->album1->id]);
+		$this->assertOk($response);
+		$response->assertJson([
+			'photos' => [
+				[
+					'id' => $this->photo1->id,
+					'tags' => [['name' => 'tag3']],
+				],
+			],
+		]);
+	}
+}
